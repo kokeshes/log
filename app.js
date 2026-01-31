@@ -44,9 +44,8 @@ function getAction(){
 
 /* ========= BOOT overlay (module-safe) ========= */
 (function bootSequence(){
-  // NOTE: 音はユーザー操作前に鳴らないことがある（iOS）ので、ここでは鳴らせたら鳴らす程度
+  // iOSはユーザー操作前の音が鳴らないので、安全に呼ぶだけ
   window.WiredAudio?.bootSound?.();
-
   const boot = document.getElementById("boot");
   if (boot){
     setTimeout(()=> boot.classList.add("hidden"), 1450);
@@ -73,12 +72,12 @@ const editorTpl = $("#editorTpl");
 const kindFilterEl = $("#kindFilter");
 const qEl = $("#q");
 const btnNew = $("#btnNew");
-// ====== GHOST TRACE (local only) ======
+
+/* ========= GHOST TRACE (local only) ========= */
 const GHOST_KEY = "wired_ghost_trace_v1";
 const GHOST_CH  = "wired_ghost_channel_v1";
 const ghostChannel = ("BroadcastChannel" in window) ? new BroadcastChannel(GHOST_CH) : null;
 
-const ghostBox = document.getElementById("ghostBox");
 const ghostListEl = document.getElementById("ghostList");
 const btnGhostClear = document.getElementById("btnGhostClear");
 const btnGhostOpenStatic = document.getElementById("btnGhostOpenStatic");
@@ -86,16 +85,13 @@ const btnGhostOpenStatic = document.getElementById("btnGhostOpenStatic");
 function readGhostTrace(){
   try{ return JSON.parse(localStorage.getItem(GHOST_KEY) || "[]"); }catch{ return []; }
 }
-
 function renderGhostTrace(list){
   if (!ghostListEl) return;
   const items = Array.isArray(list) ? list : [];
-
   if (!items.length){
     ghostListEl.innerHTML = `<div class="ghost-empty">NO TRACE</div>`;
     return;
   }
-
   ghostListEl.innerHTML = items.slice(0, 20).map(it=>{
     const when = new Date(it.at).toLocaleString();
     const line = escapeHtml(it.line || "");
@@ -107,37 +103,29 @@ function renderGhostTrace(list){
     `;
   }).join("");
 }
-
 function refreshGhostTrace(){
   renderGhostTrace(readGhostTrace());
 }
-
-// 初期表示
 refreshGhostTrace();
 
-// クリア
 btnGhostClear?.addEventListener("click", ()=>{
   localStorage.removeItem(GHOST_KEY);
   refreshGhostTrace();
-  glitchPulse?.(); // あれば演出
+  glitchPulse();
 });
 
-// STATICへ飛ぶ
 btnGhostOpenStatic?.addEventListener("click", ()=>{
   window.location.href = "./static.html";
 });
 
-// リアルタイム反映（STATICが開いてる時）
 ghostChannel?.addEventListener("message", (ev)=>{
   if (ev?.data?.type === "ghost"){
     refreshGhostTrace();
-    // ちょい演出
     try{ glitchPulse(); }catch{}
     try{ window.WiredAudio?.errorSound?.(); }catch{}
   }
 });
 
-// 別タブで localStorage が更新された時も拾う
 window.addEventListener("storage", (e)=>{
   if (e.key === GHOST_KEY) refreshGhostTrace();
 });
@@ -147,8 +135,94 @@ let currentUser = null;
 let selected = null;
 let cache = [];
 
-// PWA installed only "Hidden" kind
+// PWA installed only "Hidden" kind (UI上のみ)
 const INSTALLED_ONLY_KIND = "Hidden";
+
+/* ========= DRAFT (local only) =========
+   放置・リロード・セッション切れでも本文を守る
+*/
+const DRAFT_PREFIX = "wired_draft_v1"; // + user_id or "anon"
+let draftTimer = null;
+let suppressDraftWrite = false;
+
+function draftKey(){
+  const uid = currentUser?.id ?? "anon";
+  return `${DRAFT_PREFIX}:${uid}`;
+}
+
+function readDraft(){
+  try{
+    return JSON.parse(localStorage.getItem(draftKey()) || "null");
+  }catch{
+    return null;
+  }
+}
+
+function writeDraft(obj){
+  if (suppressDraftWrite) return;
+  try{
+    localStorage.setItem(draftKey(), JSON.stringify(obj));
+  }catch{}
+}
+
+function clearDraft(){
+  try{ localStorage.removeItem(draftKey()); }catch{}
+}
+
+function collectEditorValues(){
+  // editorが未生成ならnull
+  const kindEl = $("#kind");
+  const titleEl = $("#title");
+  const tagsEl = $("#tags");
+  const moodEl = $("#mood");
+  const bodyEl = $("#body");
+  if (!kindEl || !titleEl || !tagsEl || !moodEl || !bodyEl) return null;
+
+  return {
+    v: 1,
+    at: new Date().toISOString(),
+    // ここはUI上のkind（Hidden含む）
+    kindUI: kindEl.value ?? "Note",
+    title: (titleEl.value ?? ""),
+    tags: (tagsEl.value ?? ""),
+    mood: (moodEl.value ?? ""),
+    body: (bodyEl.value ?? ""),
+  };
+}
+
+function scheduleDraftSave(){
+  if (suppressDraftWrite) return;
+  if (draftTimer) clearTimeout(draftTimer);
+  draftTimer = setTimeout(()=>{
+    const snap = collectEditorValues();
+    if (!snap) return;
+    // 空なら書かない（ノイズ抑制）
+    const empty = !snap.title.trim() && !snap.tags.trim() && !String(snap.mood).trim() && !snap.body.trim();
+    if (empty) return;
+    writeDraft(snap);
+    // ステータスはうるさくしない：たまにだけ
+    // setStatus("DRAFT SAVED");
+  }, 700);
+}
+
+function applyDraftIfAny(kindPreference = null){
+  const d = readDraft();
+  if (!d) return false;
+
+  // editorがまだ無い場合は無理しない
+  if (!$("#kind") || !$("#title") || !$("#tags") || !$("#mood") || !$("#body")) return false;
+
+  // kindPreference があればそれを優先、なければ draft
+  $("#kind").value  = (kindPreference ?? d.kindUI ?? $("#kind").value);
+  $("#title").value = d.title ?? "";
+  $("#tags").value  = d.tags ?? "";
+  $("#mood").value  = d.mood ?? "";
+  $("#body").value  = d.body ?? "";
+
+  // 表示だけ軽く
+  setStatus("DRAFT RESTORED // OBSERVE");
+  return true;
+}
 
 /* ========= connectivity ========= */
 window.addEventListener("offline", ()=>{
@@ -248,6 +322,7 @@ async function logout(){
     setStatus("ERR: " + error.message);
     return;
   }
+
   setStatus("DISCONNECTED.");
   uiSignedOut();
   glitchPulse();
@@ -259,8 +334,7 @@ function filtered(){
   const q = (qEl?.value ?? "").trim().toLowerCase();
 
   return cache.filter(it=>{
-    // NOTE: Hidden は DB 上 kind="Other" + tag "hidden"
-    // filterでHiddenを見せたい場合だけ変換
+    // HiddenはDB上 kind="Other"+tag "hidden"
     if (kind === INSTALLED_ONLY_KIND){
       return it.kind === "Other" && (it.tags||[]).includes("hidden");
     }
@@ -328,19 +402,23 @@ async function fetchLogs(){
 }
 
 /* ========= editor ========= */
-function mapHiddenKind(kind, tags){
-  if (kind === INSTALLED_ONLY_KIND){
+function mapHiddenKind(kindUI, tags){
+  // UI上 "Hidden" をDB上 "Other"+"hidden" に落とす
+  if (kindUI === INSTALLED_ONLY_KIND){
     const t = Array.isArray(tags) ? tags.slice() : [];
     if (!t.includes("hidden")) t.unshift("hidden");
     return { kind: "Other", tags: t };
   }
-  return { kind, tags };
+  return { kind: kindUI, tags };
 }
 
 function openEditor(it){
   selected = it;
 
   if (!editorEl || !editorTpl) return;
+
+  // 一旦draft書き込み停止（セット中にスパムしない）
+  suppressDraftWrite = true;
 
   editorEl.innerHTML = "";
   editorEl.appendChild(editorTpl.content.cloneNode(true));
@@ -372,9 +450,25 @@ function openEditor(it){
   $("#btnSave").onclick = saveCurrent;
   $("#btnDelete").onclick = deleteCurrent;
 
+  // 下書き：新規（id=null）の時だけ復元を試す
+  if (!it.id){
+    applyDraftIfAny(kindSel?.value ?? null);
+  }
+
+  // editor入力を監視して下書き
+  const bindDraft = (el)=>{
+    el?.addEventListener("input", scheduleDraftSave);
+  };
+  bindDraft($("#kind"));
+  bindDraft($("#title"));
+  bindDraft($("#tags"));
+  bindDraft($("#mood"));
+  bindDraft($("#body"));
+
   // focus for fast writing
   $("#body")?.focus();
 
+  suppressDraftWrite = false;
   glitchPulse();
 }
 
@@ -399,7 +493,7 @@ function newEditor(kindOverride = null){
 /* ========= SAVE behavior: save -> immediate clear -> next log (keep kind) ========= */
 async function saveCurrent(){
   try{
-    // SAVE前：セッション確認（ついでに currentUser を確実に更新）
+    // セッション確認（放置復帰対策）
     const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
 
     if (sessionErr){
@@ -430,12 +524,11 @@ async function saveCurrent(){
 
     const keepKindUI = $("#kind")?.value ?? "Note";
 
-    // ✅ mapped を必ず作る（ここが抜けてたのが“SAVE…で止まる”主因）
-    const rawKind = $("#kind")?.value ?? "Note";
+    const rawKindUI = $("#kind")?.value ?? "Note";
     const rawTags = ($("#tags")?.value ?? "")
       .split(",").map(s=>s.trim()).filter(Boolean);
 
-    const mapped = mapHiddenKind(rawKind, rawTags);
+    const mapped = mapHiddenKind(rawKindUI, rawTags);
 
     const payload = {
       kind: mapped.kind,
@@ -456,6 +549,9 @@ async function saveCurrent(){
         return;
       }
 
+      // ✅ 保存できたら下書きは消す
+      clearDraft();
+
       window.WiredAudio?.saveSound?.();
       window.WiredAudio?.applyMood?.(payload.mood);
       setStatus("SAVED (NEW).");
@@ -469,7 +565,7 @@ async function saveCurrent(){
       return;
     }
 
-    // UPDATE
+    // UPDATE（編集保存した場合は下書きを消さない：新規用のdraftだから）
     const { error } = await supabase
       .from("logs")
       .update(payload)
@@ -488,80 +584,17 @@ async function saveCurrent(){
 
     await fetchLogs();
 
+    // 更新でも “次を書く” 挙動に倒す
     window.WiredAudio?.applyMood?.(0);
     newEditor(keepKindUI);
     setStatus("READY // NEXT LOG");
 
   }catch(e){
-    // ✅ 例外が出ても“SAVE…”で固まらないようにする
     console.error(e);
     window.WiredAudio?.errorSound?.();
     setStatus("ERR: " + (e?.message ?? String(e)));
     alert("保存処理で例外が発生しました。\nConsole を確認してください。\n" + (e?.message ?? e));
   }
-}
-
-  setStatus("SAVE…");
-
-  const keepKindUI = $("#kind")?.value ?? "Note"; // keep for next log
-  // --- ここから下はあなたの既存の payload 生成に続けてOK ---
-
-  const payload = {
-    kind: mapped.kind,
-    title: $("#title").value.trim(),
-    body: $("#body").value,
-    tags: mapped.tags,
-    mood: $("#mood").value === "" ? null : Number($("#mood").value),
-    user_id: currentUser.id,
-  };
-
-  // INSERT
-  if (!selected.id){
-    const { error } = await supabase.from("logs").insert(payload);
-
-    if (error){
-      window.WiredAudio?.errorSound?.();
-      setStatus("ERR: " + error.message);
-      return;
-    }
-
-    window.WiredAudio?.saveSound?.();
-    window.WiredAudio?.applyMood?.(payload.mood);
-    setStatus("SAVED (NEW).");
-    glitchPulse();
-
-    await fetchLogs();
-
-    // next blank log
-    window.WiredAudio?.applyMood?.(0);
-    newEditor(keepKindUI);
-    setStatus("READY // NEXT LOG");
-    return;
-  }
-
-  // UPDATE
-  const { error } = await supabase
-    .from("logs")
-    .update(payload)
-    .eq("id", selected.id);
-
-  if (error){
-    window.WiredAudio?.errorSound?.();
-    setStatus("ERR: " + error.message);
-    return;
-  }
-
-  window.WiredAudio?.saveSound?.();
-  window.WiredAudio?.applyMood?.(payload.mood);
-  setStatus("SAVED (UPDATE).");
-  glitchPulse();
-
-  await fetchLogs();
-
-  // next blank log (your requested behavior)
-  window.WiredAudio?.applyMood?.(0);
-  newEditor(keepKindUI);
-  setStatus("READY // NEXT LOG");
 }
 
 async function deleteCurrent(){
@@ -601,7 +634,6 @@ async function onSession(session){
 /* ========= events ========= */
 btnSignup?.addEventListener("click", signup);
 
-// ONE login handler (no duplicates)
 btnLogin?.addEventListener("click", ()=>{
   window.WiredAudio?.resumeAudio?.();
   window.WiredAudio?.bootSound?.();
@@ -617,15 +649,34 @@ btnRefresh?.addEventListener("click", async ()=>{
 
 btnNew?.addEventListener("click", ()=>{
   glitchPulse();
-  newEditor($("#kind")?.value ?? null); // new log keeps current kind if editor exists
+  // 現在のkindを維持して次ログへ
+  newEditor($("#kind")?.value ?? null);
+  setStatus("READY // NEW LOG");
 });
 
 kindFilterEl?.addEventListener("change", ()=> renderList(filtered()));
 qEl?.addEventListener("input", ()=> renderList(filtered()));
 
-// Live noise intensity based on typing
+// Live noise intensity based on typing (他の演出で使う用)
 document.addEventListener("input", ()=>{
   window.__noiseBoost = Math.min(1, (window.__noiseBoost || 0) + 0.2);
+});
+
+// 下書き：タブ閉じ/リロード直前にも保存（最後の保険）
+window.addEventListener("beforeunload", ()=>{
+  try{
+    const snap = collectEditorValues();
+    if (!snap) return;
+    const empty = !snap.title.trim() && !snap.tags.trim() && !String(snap.mood).trim() && !snap.body.trim();
+    if (!empty) writeDraft(snap);
+  }catch{}
+});
+
+// 放置復帰でセッションを取り直す（iOS/スマホ対策）
+document.addEventListener("visibilitychange", async ()=>{
+  if (document.visibilityState === "visible"){
+    try{ await supabase.auth.getSession(); }catch{}
+  }
 });
 
 /* ========= init ========= */
@@ -651,13 +702,5 @@ supabase.auth.onAuthStateChange(async (event, session)=>{
 // ===== SESSION KEEP-ALIVE (idle-safe) =====
 // ※ ここは“1回だけ”設定する（onAuthStateChangeの外）
 setInterval(async ()=>{
-  try{
-    await supabase.auth.getSession();
-  }catch(e){
-    // 通信が揺れてもUXを壊さない
-  }
+  try{ await supabase.auth.getSession(); }catch(e){}
 }, 5 * 60 * 1000);
-
-
-});
-
