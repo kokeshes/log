@@ -7,244 +7,176 @@
   <link rel="manifest" href="./manifest.json" />
   <link rel="apple-touch-icon" href="./assets/icon-192.png" />
   <title>STATIC ROOM // THE WIRED</title>
-
-  <!-- 既存の美術（scanlines/vignette等）を使う -->
   <link rel="stylesheet" href="./styles.css" />
 
   <style>
-    html, body { margin:0; padding:0; background:#05080c; height:100%; }
+    /* --- STATIC page layout --- */
     .static-shell{ position: relative; min-height: 100vh; overflow: hidden; }
-
-    /* MP4背景（なくてもOK） */
     .static-video{
-      position: fixed; inset:0; z-index:0;
-      width:100%; height:100%;
-      object-fit:cover;
-      opacity:.60;
-      filter: contrast(1.05) saturate(.85) brightness(.85);
-      transform: translateZ(0);
-      pointer-events:none;
+      position: fixed; inset: 0; z-index: 0;
+      width: 100%; height: 100%; object-fit: cover;
+      opacity: .62; filter: contrast(1.05) saturate(.85) brightness(.85);
+      transform: translateZ(0); pointer-events: none;
     }
-
-    /* Canvas */
-    .static-stage{ position: fixed; inset:0; z-index:1; }
-    #staticCanvas{
-      width:100vw; height:100vh;
-      display:block;
-      image-rendering: pixelated; /* PS1感 */
-    }
-
-    /* Blink mosaic */
+    .static-stage{ position: fixed; inset: 0; z-index: 1; }
+    #staticCanvas{ width: 100%; height: 100%; display:block; image-rendering: pixelated; }
     #blinkLayer{
-      position: fixed; inset:0; z-index:2;
-      pointer-events:none;
-      opacity:0;
-      mix-blend-mode: screen;
-      filter: contrast(1.2) saturate(.9);
+      position: fixed; inset: 0; z-index: 2;
+      pointer-events: none; opacity: 0;
+      mix-blend-mode: screen; filter: contrast(1.2) saturate(.9);
       transform: translateZ(0);
     }
-    #blinkLayer.on{ opacity:.9; }
-
-    /* Lain shadow overlay */
-    #shadowImg{
-      position: fixed; inset:0; z-index:2;
-      width:100%; height:100%;
-      object-fit:cover;
-      pointer-events:none;
-      opacity:0;
-      mix-blend-mode: screen;
-      filter: contrast(1.15) brightness(.9) saturate(.9) blur(.2px);
-      transform: translateZ(0);
-    }
-    #shadowImg.on{ opacity: .16; }
-
-    /* existing overlays */
-    .static-overlay{ position: fixed; inset:0; pointer-events:none; z-index:3; }
-
-    /* UI */
+    #blinkLayer.on{ opacity: .9; }
+    .static-overlay{ position: fixed; inset: 0; pointer-events:none; z-index: 3; }
     .static-ui{
-      position: fixed;
-      left: 50%;
-      bottom: 24px;
-      transform: translateX(-50%);
-      z-index: 4;
-      width: min(920px, calc(100% - 24px));
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 10px;
-      align-items: center;
+      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+      z-index: 4; width: min(980px, calc(100% - 24px));
+      display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 10px;
+      align-items: end;
     }
     .static-panel{
       border: 1px solid rgba(120,255,170,.22);
       background: rgba(0,0,0,.35);
-      padding: 10px 12px;
-      border-radius: 12px;
+      padding: 10px 12px; border-radius: 12px;
       backdrop-filter: blur(6px);
       box-shadow: 0 0 18px rgba(80,255,160,.08);
     }
     .static-title{
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-      letter-spacing: .08em;
-      font-size: 12px;
-      opacity: .9;
-      margin-bottom: 6px;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      letter-spacing: .10em; font-size: 12px; opacity: .9; margin-bottom: 6px;
     }
     .static-row{ display:flex; gap:8px; align-items:center; justify-content: space-between; }
     .static-row label{
-      width:100%;
-      display:flex;
-      gap:8px;
-      align-items:center;
-      font-size: 12px;
-      opacity: .9;
+      width:100%; display:flex; gap:8px; align-items:center;
+      font-size: 12px; opacity: .9;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      letter-spacing: .08em;
     }
     .static-row input[type="range"]{ width:100%; }
 
-    .static-hint{
-      position: fixed;
-      top: 70px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 4;
-      width: min(920px, calc(100% - 24px));
-      pointer-events:none;
-      text-align:left;
-      font-size: 12px;
-      opacity:.86;
-      letter-spacing:.06em;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-      text-shadow: 0 0 10px rgba(80,255,160,.12);
-    }
-
-    .static-portrait{
-      position: fixed;
-      right: 14px;
-      top: 88px;
-      width: min(280px, 42vw);
-      z-index: 3;
-      opacity: .62;
+    /* PS1-ish overlay entity */
+    #shadowImg{
+      position: fixed; inset: 0; margin:auto;
+      width: min(520px, 70vw);
+      opacity: 0; z-index: 3; pointer-events: none;
+      filter: contrast(1.1) saturate(.8) brightness(.75);
       mix-blend-mode: screen;
-      pointer-events:none;
       transform: translateZ(0);
     }
-    .static-portrait img{
-      width:100%;
-      height:auto;
-      display:block;
-      image-rendering: pixelated;
-      filter: drop-shadow(0 0 14px rgba(80,255,160,.10));
+    #shadowImg.on{ opacity: .55; }
+
+    /* small diag */
+    #diag{
+      position: fixed; left: 12px; top: 12px; z-index: 5;
+      padding: 8px 10px; border-radius: 12px;
+      border: 1px solid rgba(120,255,170,.18);
+      background: rgba(0,0,0,.28);
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      letter-spacing: .08em; font-size: 11px; opacity: .9;
+      max-width: calc(100% - 24px);
     }
 
-    .diag-badge{
-      position:fixed; left:10px; top:10px; z-index:9999;
-      color:#9fffc9; font-family: ui-monospace, Menlo, Consolas, monospace;
-      font-size:12px; letter-spacing:.08em;
-      background:rgba(0,0,0,.35); border:1px solid rgba(120,255,170,.22);
-      padding:8px 10px; border-radius:10px;
-      pointer-events:none;
-      opacity:.9;
+    /* hidden scramble targets (for injectIntoUI) */
+    .scramble-zone{
+      position: fixed; right: 12px; top: 12px; z-index: 5;
+      display:flex; flex-direction: column; gap: 6px;
+      align-items: flex-end;
+      pointer-events: none;
     }
-
-    @media (max-width: 860px){
-      .static-ui{ grid-template-columns: 1fr; }
-      .static-portrait{ opacity: .45; }
+    .scramble-pill{
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(120,255,170,.14);
+      background: rgba(0,0,0,.25);
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      letter-spacing: .12em; font-size: 11px; opacity: .85;
+      text-shadow: 0 0 10px rgba(120,255,180,.35);
+      max-width: min(72vw, 520px);
+      white-space: nowrap; overflow:hidden; text-overflow: ellipsis;
     }
   </style>
 </head>
-<body>
-  <header class="topbar">
-    <div class="brand">
-      <div class="sig" data-scramble="1">PROTOCOL // STATIC ROOM</div>
-      <div class="name" data-glitch="STATIC ROOM" data-scramble="1">STATIC ROOM</div>
-    </div>
-    <div class="top-actions">
-      <a class="pill" href="./index.html" data-scramble="1">BACK</a>
-      <button id="btnEnable" class="pill" data-scramble="1">ENABLE AUDIO</button>
-      <button id="btnToggle" class="pill ghost" data-scramble="1">START</button>
-    </div>
-  </header>
 
-  <div class="diag-badge" id="diag">LOADING JS…</div>
+<body class="static-shell">
+  <!-- optional background video (you can delete if not used) -->
+  <video id="bgVideo" class="static-video" autoplay muted loop playsinline>
+    <!-- MP4 is optional. If you don't have one, just leave it empty or remove the <video> tag. -->
+    <!-- <source src="./assets/static.mp4" type="video/mp4" /> -->
+  </video>
 
-  <div class="static-shell">
-    <!-- MP4は任意：無ければ読み込み失敗してもOK -->
-    <video id="bgVideo" class="static-video" autoplay muted loop playsinline preload="metadata">
-      <source src="./assets/static/static.mp4" type="video/mp4" />
-    </video>
+  <canvas id="staticCanvas" class="static-stage"></canvas>
+  <canvas id="blinkLayer"></canvas>
 
-    <div class="static-stage">
-      <canvas id="staticCanvas"></canvas>
-    </div>
+  <!-- overlay -->
+  <div class="static-overlay scanlines"></div>
+  <div class="static-overlay vignette"></div>
+  <div class="static-overlay dither"></div>
+  <div class="static-overlay warp"></div>
+  <div class="glitch-layer" aria-hidden="true"></div>
 
-    <canvas id="blinkLayer"></canvas>
+  <!-- shadow image -->
+  <img id="shadowImg" src="./assets/lain-shadow.png" alt="" />
 
-    <img id="shadowImg" src="./assets/static/lain-shadow.png" alt="" aria-hidden="true"/>
+  <!-- diag -->
+  <div id="diag">LOADING JS...</div>
 
-    <div class="scanlines static-overlay"></div>
-    <div class="vignette static-overlay"></div>
-    <div class="dither static-overlay"></div>
-    <div class="warp static-overlay"></div>
-    <div class="glitch-layer static-overlay" aria-hidden="true"></div>
+  <!-- scramble targets (injectIntoUI uses these) -->
+  <div class="scramble-zone" aria-hidden="true">
+    <div class="scramble-pill" data-scramble="1">PRESENT TIME. PRESENT DAY.</div>
+    <div class="scramble-pill" data-scramble="1">DO NOT PANIC. OBSERVE.</div>
+    <div class="scramble-pill" data-scramble="1">NODE // STATIC ROOM</div>
+  </div>
 
-    <div class="static-portrait" aria-hidden="true">
-      <img src="./assets/wired-girl.png" alt="" />
-    </div>
-
-    <div class="static-hint" id="hintText" data-scramble="1">
-      do not panic. observe.<br/>
-      enable audio once. start to enter the room.
-    </div>
-
-    <div class="static-ui">
-      <div class="static-panel">
-        <div class="static-title" data-scramble="1">VISUAL</div>
-        <div class="static-row">
-          <label data-scramble="1">INTENSITY <input id="vIntensity" type="range" min="0" max="100" value="70" /></label>
-        </div>
-        <div class="static-row" style="margin-top:8px;">
-          <label data-scramble="1">GLITCH <input id="vGlitch" type="range" min="0" max="100" value="38" /></label>
-        </div>
+  <!-- UI -->
+  <div class="static-ui">
+    <div class="static-panel">
+      <div class="static-title">VISUAL / CONTROL</div>
+      <div class="static-row">
+        <button id="btnToggle" class="pill">START</button>
+        <button id="btnBurst" class="pill ghost">BURST</button>
+        <button id="btnCalm" class="pill ghost">CALM</button>
       </div>
-
-      <div class="static-panel">
-        <div class="static-title" data-scramble="1">AUDIO</div>
-        <div class="static-row">
-          <label data-scramble="1">VOLUME <input id="aVol" type="range" min="0" max="100" value="26" /></label>
-        </div>
-        <div class="static-row" style="margin-top:8px;">
-          <label data-scramble="1">TONE <input id="aTone" type="range" min="0" max="100" value="36" /></label>
-        </div>
+      <div class="static-row" style="margin-top:8px;">
+        <label>INTENSITY
+          <input id="vIntensity" type="range" min="0" max="100" value="70" />
+        </label>
       </div>
+      <div class="static-row" style="margin-top:6px;">
+        <label>GLITCH
+          <input id="vGlitch" type="range" min="0" max="100" value="38" />
+        </label>
+      </div>
+    </div>
 
-      <div class="static-panel">
-        <div class="static-title" data-scramble="1">MODE</div>
-        <div class="static-row">
-          <button id="btnBurst" class="pill ghost" style="width:100%;" data-scramble="1">BURST GLITCH</button>
-        </div>
-        <div class="static-row" style="margin-top:8px;">
-          <button id="btnCalm" class="pill ghost" style="width:100%;" data-scramble="1">CALM DOWN</button>
-        </div>
+    <div class="static-panel">
+      <div class="static-title">AUDIO / WIRED HISS</div>
+      <div class="static-row">
+        <button id="btnEnable" class="pill">ENABLE AUDIO</button>
+      </div>
+      <div class="static-row" style="margin-top:8px;">
+        <label>VOLUME
+          <input id="aVol" type="range" min="0" max="100" value="26" />
+        </label>
+      </div>
+      <div class="static-row" style="margin-top:6px;">
+        <label>TONE
+          <input id="aTone" type="range" min="0" max="100" value="36" />
+        </label>
+      </div>
+    </div>
+
+    <div class="static-panel">
+      <div class="static-title">NAV</div>
+      <div class="static-row">
+        <a class="pill ghost" href="./index.html">BACK TO LOG</a>
+        <button class="pill ghost" onclick="location.reload()">RELOAD</button>
+      </div>
+      <div class="static-row" style="margin-top:8px; opacity:.85; font-size:12px; letter-spacing:.08em; font-family: ui-monospace, Menlo, Consolas, monospace;">
+        Tip: Just Observe.
       </div>
     </div>
   </div>
 
-  <!-- ✅ 既存の演出（あれば） -->
-  <script type="module" src="./crt.js"></script>
-  <script type="module" src="./ps1.js"></script>
-
-  <!-- ✅ キャッシュ事故回避：importで読む -->
-  <script type="module">
-    const diag = document.getElementById("diag");
-    diag.textContent = "INLINE OK // importing…";
-
-    const url = "./static.js?v=" + Date.now();
-    import(url).then(()=>{
-      diag.textContent = "STATIC READY // DO NOT PANIC.";
-      setTimeout(()=>{ diag.style.opacity = ".25"; }, 1800);
-    }).catch((err)=>{
-      console.error(err);
-      diag.textContent = "IMPORT FAILED: " + (err?.message || String(err));
-    });
-  </script>
+  <script type="module" src="./static.js"></script>
 </body>
 </html>
