@@ -537,7 +537,37 @@ btnEnable?.addEventListener("click", async () => {
   try{ await audioCtx.resume(); }catch{}
   if (btnEnable) btnEnable.textContent = "AUDIO READY";
 });
+/* ===== iOS AUDIO UNLOCK (one tap anywhere) ===== */
+let audioUnlocked = false;
 
+async function unlockAudioOnce(){
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+
+  try{
+    // ★ iOS は「この瞬間」に AudioContext を作るのが一番強い
+    ensureAudio();
+    await audioCtx.resume();
+
+    // master が 0 のままだと「鳴ってるのに無音」になるので最低値を保証
+    if (master && master.gain.value === 0){
+      master.gain.value = 0.18;
+    }
+
+    // UIがあるなら表示更新（任意）
+    if (btnEnable) btnEnable.textContent = "AUDIO READY";
+  }catch(e){
+    console.warn("unlockAudioOnce failed:", e);
+    audioUnlocked = false; // 失敗したら次回タップで再挑戦できるように
+  }
+}
+
+// 画面どこでもOK（ボタン押し忘れ対策）
+window.addEventListener("pointerdown", unlockAudioOnce, { once:false, passive:true });
+window.addEventListener("touchstart", unlockAudioOnce, { once:false, passive:true });
+
+// 既存の Enable ボタンも強化（押したら確実に解除）
+btnEnable?.addEventListener("click", unlockAudioOnce);
 /* =========================================================
    controls + state
 ========================================================= */
