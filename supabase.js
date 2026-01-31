@@ -6,6 +6,32 @@ const SUPABASE_KEY = "sb_publishable_XDbKzADmUoR1NnEPIRl57w_iB7r088Q";
 
 let _supabase = null;
 
+function isAbortError(e){
+  return e?.name === "AbortError" || String(e?.message || "").toLowerCase().includes("aborted");
+}
+
+// AbortError を少しだけ自動リトライ（PCでもiOSでも効く）
+async function safeFetch(url, options = {}){
+  // signal を「完全に削除」する
+  const { signal, ...rest } = options || {};
+
+  // keepalive は POST などで効くことがある（GETでも害はほぼ無い）
+  if (rest.keepalive === undefined) rest.keepalive = true;
+
+  let lastErr = null;
+  for (let i = 0; i < 2; i++){
+    try{
+      return await fetch(url, rest);
+    }catch(e){
+      lastErr = e;
+      if (!isAbortError(e)) throw e;
+      // 少し待って再試行
+      await new Promise(r => setTimeout(r, 200 + i * 250));
+    }
+  }
+  throw lastErr;
+}
+
 export function getSupabase(){
   if (_supabase) return _supabase;
 
@@ -13,16 +39,10 @@ export function getSupabase(){
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: false
+      detectSessionInUrl: false,
     },
     global: {
-      // iOS PWAで「変なキャッシュ」に触れないようにする
-      fetch: (url, options = {}) => {
-        return fetch(url, {
-          ...options,
-          cache: "no-store"
-        });
-      }
+      fetch: safeFetch
     }
   });
 
