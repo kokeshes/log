@@ -272,6 +272,11 @@ async function saveCurrent(){
     window.WiredAudio?.saveSound();
     window.WiredAudio?.applyMood(payload.mood);
     setStatus("SAVED (NEW).");
+    // ---- reset for next log ----
+    currentId = null;
+editorEl.reset();
+$("#mood").value = "0";
+setStatus("READY // NEW LOG");
     glitchPulse();
     await fetchLogs();
     openEditor(data);
@@ -287,6 +292,11 @@ async function saveCurrent(){
     window.WiredAudio?.saveSound();
     window.WiredAudio?.applyMood(payload.mood);
     setStatus("SAVED (UPDATE).");
+    // ---- reset for next log ----
+    currentId = null;
+    editorEl.reset();
+    $("#mood").value = "0";
+    setStatus("READY // NEW LOG");
     glitchPulse();
     await fetchLogs();
     openEditor(data);
