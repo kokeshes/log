@@ -251,6 +251,8 @@ function ensureInstalledKind(){
 
 function uiSignedOut(){
   authBox?.classList.remove("hidden");
+  authBox?.removeAttribute("aria-hidden");
+
   navBox?.classList.add("hidden");
   btnLogout?.classList.add("hidden");
 
@@ -270,7 +272,10 @@ function uiSignedOut(){
 }
 
 function uiSignedIn(user){
+  // ログイン後はAUTH欄を完全に消す
   authBox?.classList.add("hidden");
+  authBox?.setAttribute("aria-hidden","true");
+
   navBox?.classList.remove("hidden");
   btnLogout?.classList.remove("hidden");
 
