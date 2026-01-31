@@ -562,6 +562,18 @@ showOfflineBanner(!navigator.onLine);
 const { data } = await supabase.auth.getSession();
 await onSession(data.session);
 
-supabase.auth.onAuthStateChange(async (_event, session)=>{
+supabase.auth.onAuthStateChange(async (event, session)=>{
+  // 既存のセッション反映
   await onSession(session);
+
+  // ===== 放置対策：トークン異常をUIに通知 =====
+  if (event === "TOKEN_REFRESH_FAILED"){
+    setStatus("TOKEN LOST // PLEASE RELOGIN");
+    window.WiredAudio?.errorSound();
+  }
+
+  if (event === "SIGNED_OUT"){
+    setStatus("SIGNED OUT // AUTH REQUIRED");
+  }
 });
+
