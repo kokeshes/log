@@ -73,6 +73,74 @@ const editorTpl = $("#editorTpl");
 const kindFilterEl = $("#kindFilter");
 const qEl = $("#q");
 const btnNew = $("#btnNew");
+// ====== GHOST TRACE (local only) ======
+const GHOST_KEY = "wired_ghost_trace_v1";
+const GHOST_CH  = "wired_ghost_channel_v1";
+const ghostChannel = ("BroadcastChannel" in window) ? new BroadcastChannel(GHOST_CH) : null;
+
+const ghostBox = document.getElementById("ghostBox");
+const ghostListEl = document.getElementById("ghostList");
+const btnGhostClear = document.getElementById("btnGhostClear");
+const btnGhostOpenStatic = document.getElementById("btnGhostOpenStatic");
+
+function readGhostTrace(){
+  try{ return JSON.parse(localStorage.getItem(GHOST_KEY) || "[]"); }catch{ return []; }
+}
+
+function renderGhostTrace(list){
+  if (!ghostListEl) return;
+  const items = Array.isArray(list) ? list : [];
+
+  if (!items.length){
+    ghostListEl.innerHTML = `<div class="ghost-empty">NO TRACE</div>`;
+    return;
+  }
+
+  ghostListEl.innerHTML = items.slice(0, 20).map(it=>{
+    const when = new Date(it.at).toLocaleString();
+    const line = escapeHtml(it.line || "");
+    return `
+      <div class="ghost-item">
+        <div>${line}</div>
+        <div class="ghost-meta">${when} // ${escapeHtml(it.seed || "")}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function refreshGhostTrace(){
+  renderGhostTrace(readGhostTrace());
+}
+
+// 初期表示
+refreshGhostTrace();
+
+// クリア
+btnGhostClear?.addEventListener("click", ()=>{
+  localStorage.removeItem(GHOST_KEY);
+  refreshGhostTrace();
+  glitchPulse?.(); // あれば演出
+});
+
+// STATICへ飛ぶ
+btnGhostOpenStatic?.addEventListener("click", ()=>{
+  window.location.href = "./static.html";
+});
+
+// リアルタイム反映（STATICが開いてる時）
+ghostChannel?.addEventListener("message", (ev)=>{
+  if (ev?.data?.type === "ghost"){
+    refreshGhostTrace();
+    // ちょい演出
+    try{ glitchPulse(); }catch{}
+    try{ window.WiredAudio?.errorSound?.(); }catch{}
+  }
+});
+
+// 別タブで localStorage が更新された時も拾う
+window.addEventListener("storage", (e)=>{
+  if (e.key === GHOST_KEY) refreshGhostTrace();
+});
 
 /* ========= state ========= */
 let currentUser = null;
