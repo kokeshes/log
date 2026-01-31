@@ -496,3 +496,77 @@ textarea{
   .panel{ min-height: unset; }
   textarea{ min-height: 38vh; }
 }
+/* =========================================================
+   GHOST TRACE (restore UI)
+   ========================================================= */
+
+.ghostbox{
+  margin-top:14px;
+  padding:12px;
+  border:1px solid rgba(120,255,170,.12);
+  border-radius:14px;
+  background: rgba(0,0,0,.18);
+  box-shadow: 0 0 18px rgba(80,255,160,.06);
+}
+
+.ghost-title{
+  font-family: var(--mono);
+  font-size:11px;
+  letter-spacing:.14em;
+  opacity:.75;
+  margin-bottom:8px;
+}
+
+.ghost-list{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  max-height:180px;
+  overflow:auto;
+  padding-right:4px;
+}
+
+.ghost-empty{
+  font-family: var(--mono);
+  font-size:10px;
+  letter-spacing:.12em;
+  opacity:.45;
+}
+
+.ghost-item{
+  padding:8px 10px;
+  border-radius:12px;
+  border:1px solid rgba(120,255,170,.10);
+  background: rgba(0,0,0,.16);
+  font-size:12px;
+  line-height:1.5;
+  color: rgba(210,245,235,.85);
+}
+
+.ghost-meta{
+  margin-top:4px;
+  font-family: var(--mono);
+  font-size:10px;
+  letter-spacing:.10em;
+  opacity:.55;
+}
+
+/* =========================================================
+   RGB SPLIT LAYER (visual only)
+   ========================================================= */
+
+.rgb-split{
+  position:fixed;
+  inset:0;
+  z-index:4;
+  pointer-events:none;
+  mix-blend-mode: screen;
+  opacity:.08;
+  background:
+    linear-gradient(90deg,
+      rgba(255,0,80,.12),
+      transparent 40%,
+      transparent 60%,
+      rgba(0,160,255,.12)
+    );
+}
