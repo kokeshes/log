@@ -390,7 +390,7 @@ function applyAudioParams(){
 aVol?.addEventListener("input", applyAudioParams);
 aTone?.addEventListener("input", applyAudioParams);
 
-btnEnable?.addEventListener("click", async () => {
+Enable?.addEventListener("click", async () => {
   ensureAudio();
   try{ await audioCtx.resume(); }catch{}
   if (btnEnable) btnEnable.textContent = "AUDIO READY";
@@ -430,6 +430,8 @@ btnToggle?.addEventListener("click", async () => {
   }catch{}
 
   if (running){
+     const line = injectHorrorText();
+      if (line) pushGhostTrace(line);
     burst = Math.max(burst, 0.2);
     if (audioCtx){ try{ await audioCtx.resume(); }catch{} }
   }
