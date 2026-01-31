@@ -9,11 +9,6 @@ function setStatus(msg){
   if (statusEl) statusEl.textContent = msg;
 }
 
-function isStandalone(){
-  return window.matchMedia?.("(display-mode: standalone)")?.matches
-    || window.navigator.standalone === true;
-}
-
 function showOfflineBanner(on){
   const el = document.getElementById("offline");
   if (!el) return;
@@ -36,10 +31,6 @@ function escapeHtml(s){
     .replaceAll(">","&gt;")
     .replaceAll('"',"&quot;")
     .replaceAll("'","&#039;");
-}
-
-function getAction(){
-  return new URL(location.href).searchParams.get("action");
 }
 
 /* ========= BOOT ========= */
@@ -75,8 +66,6 @@ let currentUser = null;
 let selected = null;
 let cache = [];
 
-const INSTALLED_ONLY_KIND = "Hidden";
-
 /* ========= connectivity ========= */
 addEventListener("offline", ()=>{
   showOfflineBanner(true);
@@ -93,9 +82,9 @@ function uiSignedOut(){
   navBox?.classList.add("hidden");
   btnLogout?.classList.add("hidden");
 
+  editorEl.classList.add("locked");
   editorEl.innerHTML =
     `<div class="locked-msg">AUTH REQUIRED // CONNECT TO WIRED</div>`;
-  editorEl.classList.add("locked");
 
   listEl.innerHTML =
     `<div class="empty-msg">NO DATA // WAITING FOR NODE SYNC</div>`;
@@ -149,6 +138,40 @@ async function logout(){
   setStatus("DISCONNECTED");
 }
 
+/* ========= list ========= */
+function renderList(items){
+  if (!items.length){
+    listEl.innerHTML =
+      `<div class="empty-msg">NO DATA // CREATE FIRST LOG</div>`;
+    return;
+  }
+
+  listEl.innerHTML = "";
+
+  for (const it of items){
+    const div = document.createElement("div");
+    div.className = "item";
+
+    const preview = (it.body || "").replace(/\s+/g," ").slice(0,120);
+    const tags = (it.tags||[])
+      .slice(0,4)
+      .map(t=>`<span class="badge">#${escapeHtml(t)}</span>`)
+      .join("");
+
+    div.innerHTML = `
+      <div class="k">${escapeHtml(it.kind)}</div>
+      <div class="t">${escapeHtml(it.title || "(no title)")}</div>
+      <div class="m">${escapeHtml(preview)}</div>
+      <div class="d">
+        <span class="badge">${new Date(it.created_at).toLocaleString()}</span>
+        ${tags}
+      </div>
+    `;
+    div.onclick = ()=>openEditor(it);
+    listEl.appendChild(div);
+  }
+}
+
 /* ========= data ========= */
 async function fetchLogs(){
   if (!currentUser) return;
@@ -167,17 +190,14 @@ async function fetchLogs(){
   }
 
   cache = data || [];
-  console.log("LOGS:", cache);
-
-  // ★ フィルタなしで必ず表示
   renderList(cache);
-
   setStatus(`SYNC OK // ${cache.length} logs`);
 }
 
 /* ========= editor ========= */
 function openEditor(it){
   selected = it;
+
   editorEl.innerHTML = "";
   editorEl.appendChild(editorTpl.content.cloneNode(true));
 
@@ -189,6 +209,7 @@ function openEditor(it){
 
   $("#btnSave").onclick = saveCurrent;
   $("#btnDelete").onclick = deleteCurrent;
+
   $("#body").focus();
 }
 
@@ -207,6 +228,9 @@ function newEditor(kind="Note"){
 async function saveCurrent(){
   try{
     setStatus("SAVE…");
+
+    // ★ 放置対策：必ず refresh
+    await supabase.auth.refreshSession();
 
     const { data } = await supabase.auth.getSession();
     if (!data.session){
@@ -239,16 +263,18 @@ async function saveCurrent(){
     await fetchLogs();
     newEditor(payload.kind);
     setStatus("READY // NEXT LOG");
+
   }catch(e){
     console.error(e);
     setStatus("ERR: SAVE FAILED");
-    alert("SAVE FAILED\n"+e.message);
+    alert("SAVE FAILED\n" + e.message);
   }
 }
 
 async function deleteCurrent(){
   if (!selected?.id) return;
   if (!confirm("DELETE LOG?")) return;
+
   await supabase.from("logs").delete().eq("id", selected.id);
   await fetchLogs();
   newEditor();
@@ -267,11 +293,11 @@ async function onSession(session){
 }
 
 /* ========= events ========= */
-btnLogin.onclick = ()=>login();
-btnSignup.onclick = ()=>signup();
-btnLogout.onclick = ()=>logout();
-btnRefresh.onclick = ()=>fetchLogs();
-btnNew.onclick = ()=>newEditor($("#kind")?.value||"Note");
+btnLogin.onclick = login;
+btnSignup.onclick = signup;
+btnLogout.onclick = logout;
+btnRefresh.onclick = fetchLogs;
+btnNew.onclick = ()=>newEditor($("#kind")?.value || "Note");
 
 /* ========= init ========= */
 setStatus("BOOT…");
@@ -282,5 +308,5 @@ await onSession(data.session);
 
 supabase.auth.onAuthStateChange((_e, session)=>onSession(session));
 
-// keep alive
+// keep alive（軽量）
 setInterval(()=>supabase.auth.getSession(), 5*60*1000);
