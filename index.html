@@ -8,13 +8,10 @@
   <link rel="apple-touch-icon" href="./assets/icon-192.png" />
   <title>THE WIRED // Y. T.</title>
   <link rel="stylesheet" href="./styles.css" />
-
-  <!-- ✅ 保険：styles.cssが壊れてもbootだけは必ず表示される -->
-  <style>
-    #boot.boot{display:flex !important;}
-  </style>
 </head>
+
 <body>
+  <!-- BOOT -->
   <div id="boot" class="boot">
     <div class="boot-inner">
       <div class="boot-title">THE WIRED</div>
@@ -22,9 +19,11 @@
       <div class="boot-sub" style="margin-top:6px;opacity:.9">PRESENT TIME // PRESENT DAY</div>
       <div class="boot-bar"><div class="boot-fill"></div></div>
       <div class="boot-hint">do not panic. observe.</div>
+      <div id="bootErr" class="boot-err hidden">ERR</div>
     </div>
   </div>
 
+  <!-- OFFLINE -->
   <div id="offline" class="offline hidden">
     <div class="offline-inner">
       <div class="offline-title">NO CARRIER</div>
@@ -35,8 +34,6 @@
   <canvas id="noise"></canvas>
   <div class="scanlines"></div>
   <div class="vignette"></div>
-  <div class="dither"></div>
-  <div class="warp"></div>
   <div class="glitch-layer" aria-hidden="true"></div>
 
   <header class="topbar">
@@ -47,10 +44,6 @@
     <div class="top-actions">
       <button id="btnRefresh" class="pill">SYNC</button>
       <a class="pill" href="./static.html">STATIC</a>
-
-      <!-- ✅ iOS音死に復帰用（audio.js側で拾う） -->
-      <button id="btnAudio" class="pill ghost" type="button">AUDIO</button>
-
       <button id="btnLogout" class="pill danger hidden">LOGOUT</button>
     </div>
   </header>
@@ -76,7 +69,7 @@
 
         <p class="hint">
           この端末はノード。認証は扉。<br/>
-          “Observe” はあなたの合言葉でもある。
+          “Observe” は合言葉。
         </p>
       </div>
 
@@ -132,8 +125,7 @@
         </div>
 
         <div class="small">
-          Tip: more noise for scroll or click<br/>
-          long text is suit for “WIRED"
+          Tip: long text is suit for “WIRED”
         </div>
       </div>
     </section>
@@ -149,9 +141,7 @@
       <div class="panel-title">TERMINAL</div>
 
       <div id="editor" class="editor locked">
-        <div class="locked-msg">
-          AUTH REQUIRED // CONNECT TO WIRED
-        </div>
+        <div class="locked-msg">AUTH REQUIRED // CONNECT TO WIRED</div>
       </div>
 
       <template id="editorTpl">
@@ -208,25 +198,16 @@
     <div id="status" class="footer-right">BOOTING…</div>
   </footer>
 
-  <!-- ✅ “どこかが壊れて boot が永遠に残る” を防ぐ保険（見た目は前と同じ） -->
+  <!-- ここでまず “UIが必ず出る” を担保する -->
   <script>
-    setTimeout(()=>{
-      const b = document.getElementById("boot");
-      if (b) b.classList.add("hidden");
-    }, 1800);
+    // bootは最悪JSが死んでも消える（UIに到達できる）
+    setTimeout(()=>{ document.getElementById("boot")?.classList.add("hidden"); }, 1600);
   </script>
 
+  <!-- 安定最小：app.js と noise.js だけ -->
   <script type="module" src="./app.js"></script>
   <script type="module" src="./noise.js"></script>
-  <script type="module" src="./crt.js"></script>
-  <script type="module" src="./ps1.js"></script>
-  <script src="./audio.js"></script>
-  <!--
-<script>
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js");
-  }
-</script>
--->
+
+  <!-- sw登録は一旦しない（復旧後に戻す） -->
 </body>
 </html>
