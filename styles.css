@@ -356,3 +356,64 @@ textarea{ min-height: 260px; resize: vertical; }
 }
 .offline-title{ letter-spacing:.26em; color:#ffd0da; text-transform:uppercase; }
 .offline-sub{ margin-top:8px; letter-spacing:.20em; color:var(--muted); text-transform:uppercase; }
+
+/* ===== WIRED ATMOS PATCH (append) ===== */
+:root{
+  --glow: rgba(120,255,180,.22);
+  --glow2: rgba(255,90,140,.16);
+}
+
+/* 全体を少しだけ“古い画面”に寄せる */
+body{
+  filter: saturate(0.92) contrast(1.04);
+}
+
+/* スキャンラインを強く・細く */
+.scanlines{
+  opacity:.42 !important;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255,255,255,.10) 0px,
+    rgba(255,255,255,.04) 1px,
+    rgba(0,0,0,0) 3px,
+    rgba(0,0,0,0) 6px
+  ) !important;
+}
+
+/* 微妙な“電波のうねり” */
+.warp{
+  opacity:.55 !important;
+  animation: wired-warp 6.5s ease-in-out infinite;
+}
+@keyframes wired-warp{
+  0%{ transform: translateX(-1.5px) skewX(-0.2deg); filter: blur(.2px); }
+  50%{ transform: translateX(1.5px) skewX(0.25deg); filter: blur(.35px); }
+  100%{ transform: translateX(-1.5px) skewX(-0.2deg); filter: blur(.2px); }
+}
+
+/* グリッチレイヤーを“出た感”強めに */
+.glitch-layer{
+  mix-blend-mode: screen;
+  filter: blur(.2px) contrast(1.1);
+}
+
+/* タイトル周りに“にじみ” */
+.brand .name{
+  text-shadow:
+    0 0 12px var(--glow),
+    0 0 26px rgba(120,255,180,.18),
+    1px 0 0 rgba(255,90,140,.10),
+   -1px 0 0 rgba(120,255,180,.10);
+}
+
+/* パネルの縁に“薄い漏電” */
+.panel{
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,.25) inset,
+    0 14px 38px rgba(0,0,0,.35),
+    0 0 28px rgba(120,255,180,.06),
+    0 0 18px rgba(255,90,140,.04);
+}
+
+/* ほんの少しだけ“汚れ” */
+.dither{ opacity:.10 !important; }
