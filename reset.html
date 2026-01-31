@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>WIRED RESET</title>
+  <style>
+    body{background:#05080c;color:#baffd8;font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.08em;padding:20px}
+    .box{border:1px solid rgba(186,255,216,.25);padding:14px;border-radius:10px}
+    .ok{color:#7dffb0}
+    .ng{color:#ff7d7d}
+    button{background:transparent;color:#baffd8;border:1px solid rgba(186,255,216,.25);padding:10px 12px;border-radius:10px}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div>WIRED RESET // Service Worker + Cache purge</div>
+    <div id="log" style="margin-top:10px;white-space:pre-wrap"></div>
+    <div style="margin-top:14px">
+      <button id="btn">RUN AGAIN</button>
+      <button id="go">GO INDEX</button>
+    </div>
+  </div>
+
+<script>
+const logEl = document.getElementById("log");
+const log = (s)=>{ logEl.textContent += s + "\n"; };
+
+async function purge(){
+  log("STEP 1: unregister service workers…");
+  if ("serviceWorker" in navigator){
+    const regs = await navigator.serviceWorker.getRegistrations();
+    if (!regs.length) log("  (no registrations)");
+    for (const r of regs){
+      const ok = await r.unregister();
+      log("  unregister: " + (ok ? "OK" : "FAIL"));
+    }
+  }else{
+    log("  serviceWorker not supported");
+  }
+
+  log("STEP 2: delete caches…");
+  if ("caches" in window){
+    const keys = await caches.keys();
+    if (!keys.length) log("  (no caches)");
+    for (const k of keys){
+      await caches.delete(k);
+      log("  deleted: " + k);
+    }
+  }else{
+    log("  Cache API not supported");
+  }
+
+  log("STEP 3: hard reload hint…");
+  log("  Next: open index.html (fresh)");
+  log("\nDONE.");
+}
+
+document.getElementById("btn").addEventListener("click", ()=>{
+  logEl.textContent = "";
+  purge();
+});
+
+document.getElementById("go").addEventListener("click", ()=>{
+  location.href = "./index.html?reset=" + Date.now();
+});
+
+purge();
+</script>
+</body>
+</html>
