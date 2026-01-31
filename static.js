@@ -1,11 +1,9 @@
 /* =========================================================
    STATIC ROOM // THE WIRED
-   full replace static.js (stable + UI toggle)  ✅fixed
+   full replace static.js (stable + UI scramble + louder audio)
 ========================================================= */
 
 const $ = (s) => document.querySelector(s);
-
-// ✅ Timeout alias (your code uses Timeout(...) everywhere)
 const Timeout = (fn, ms) => window.setTimeout(fn, ms);
 
 /* ---------- DOM ---------- */
@@ -44,7 +42,7 @@ function logDiag(msg){
 }
 
 /* =========================================================
-   UI TOGGLE (persist + hint) ✅fixed localStorage + Timeout
+   UI TOGGLE (persist + hint)
 ========================================================= */
 const UI_KEY = "wired_static_ui_off_v1";
 
@@ -66,7 +64,6 @@ function getUIOff(){
   try{ return (localStorage.getItem(UI_KEY) === "1"); }catch{ return false; }
 }
 
-// init
 UIOff(getUIOff(), false);
 
 btnUI?.addEventListener("click", ()=>{
@@ -74,7 +71,6 @@ btnUI?.addEventListener("click", ()=>{
   UIOff(off, off);
 });
 
-// Keyboard: press "u" to toggle UI
 addEventListener("keydown", (e)=>{
   if (e.repeat) return;
   if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
@@ -87,39 +83,28 @@ addEventListener("keydown", (e)=>{
 /* =========================================================
    MOBILE UI TOGGLE (long-press / 3-finger tap)
 ========================================================= */
-
-// 長押し（650ms）でUIトグル：誤爆しにくい
 let lpTimer = null;
-let lpMoved = false;
 
 function clearLongPress(){
   if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
 }
 
 addEventListener("touchstart", (e)=>{
-  // UI上のボタン操作を邪魔しない
   const t = e.target;
   if (t && (t.closest?.(".static-ui") || t.closest?.("#btnUI"))) return;
 
-  lpMoved = false;
   clearLongPress();
   lpTimer = Timeout(()=>{
-    // 長押し成立 → UI切替
     const off = !document.body.classList.contains("ui-off");
-    UIOff(off, off);   // off時はヒント表示
+    UIOff(off, off);
     try{ burst = Math.max(burst, 0.25); }catch{}
   }, 650);
 }, { passive: true });
 
-addEventListener("touchmove", ()=>{
-  lpMoved = true;
-  clearLongPress(); // スクロールし始めたらキャンセル
-}, { passive: true });
+addEventListener("touchmove", clearLongPress, { passive: true });
+addEventListener("touchend", clearLongPress, { passive: true });
+addEventListener("touchcancel", clearLongPress, { passive: true });
 
-addEventListener("touchend", ()=>{ clearLongPress(); }, { passive: true });
-addEventListener("touchcancel", ()=>{ clearLongPress(); }, { passive: true });
-
-// 3本指タップでもトグル（アクセシブルな隠しコマンド）
 addEventListener("touchstart", (e)=>{
   if (e.touches && e.touches.length === 3){
     const off = !document.body.classList.contains("ui-off");
@@ -127,9 +112,8 @@ addEventListener("touchstart", (e)=>{
   }
 }, { passive: true });
 
-
 /* =========================================================
-   GHOST TRACE (local only; NOT saved to Supabase) ✅fixed setItem
+   GHOST TRACE (local only; NOT saved to Supabase)
 ========================================================= */
 const GHOST_KEY = "wired_ghost_trace_v1";
 const GHOST_CH  = "wired_ghost_channel_v1";
@@ -162,7 +146,7 @@ function pushGhostTrace(line){
 }
 
 /* =========================================================
-   HORROR TEXT (returns the line)
+   HORROR TEXT
 ========================================================= */
 const HORROR_LINES = [
   "do not panic.",
@@ -201,7 +185,6 @@ function injectIntoUI(line){
   Timeout(() => { el.textContent = original; }, 400 + Math.random()*600);
 }
 
-// ✅ safety cap so floating texts never pile up even if something goes wrong
 const MAX_FLOATING_TEXT = 12;
 
 function injectFloatingText(line){
@@ -268,7 +251,7 @@ addEventListener("resize", resize);
 resize();
 
 /* =========================================================
-   UI scramble
+   UI scramble (pills + UI)
 ========================================================= */
 const SCRAMBLE_CHARS =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_#@$%+*-=<>[]{}" +
@@ -279,33 +262,13 @@ const SCRAMBLE_CHARS =
 
 const scrambleTargets = Array.from(document.querySelectorAll("[data-scramble='1']"))
   .map(el => ({ el, base: el.textContent }));
-// ✅ UI専用スクランブル対象
-const uiScrambleTargets = Array.from(document.querySelectorAll("[data-ui-scramble='1']"))
-  .map(el => ({ el, base: el.textContent }));
 
-function scrambleUI(intensity){
-  if (!uiScrambleTargets.length) return;
-
-  // UIは“軽め”が雰囲気良い（読みやすさ残す）
-  const p = 0.02 + intensity * 0.12;
-  const hold = 120 + Math.random()*260;
-
-  for (const t of uiScrambleTargets){
-    const s = t.base;
-    let out = "";
-    for (let i=0;i<s.length;i++){
-      const ch = s[i];
-      if (ch === " " || ch === "\n" || ch === "\t"){ out += ch; continue; }
-      out += (Math.random() < p)
-        ? SCRAMBLE_CHARS[(Math.random()*SCRAMBLE_CHARS.length)|0]
-        : ch;
-    }
-    t.el.textContent = out;
-  }
-
-  Timeout(() => {
-    for (const t of uiScrambleTargets) t.el.textContent = t.base;
-  }, hold);
+/**
+ * ✅ UIスクランブル対象は「base固定」だと UI文言が変わったときに戻りが壊れる。
+ * なので base を毎回 “その瞬間の textContent” から取得して復帰する。
+ */
+function getUIScrambleEls(){
+  return Array.from(document.querySelectorAll("[data-ui-scramble='1']"));
 }
 
 let scrambleCooldown = 0;
@@ -340,8 +303,46 @@ function maybeScramble(intensity){
   }
 }
 
+/* ✅ UI scramble: definitely works if data-ui-scramble exists */
+let uiScrambleCooldown = 0;
+function maybeScrambleUI(intensity){
+  const now = performance.now();
+  if (now < uiScrambleCooldown) return;
+
+  const els = getUIScrambleEls();
+  if (!els.length) return;
+
+  // “頻度低め + 軽め” でも確実に見えるように少しだけ上げる
+  const chance = 0.010 + intensity * 0.030; // ←ここが「見えない」人は上げてもOK
+  if (Math.random() >= chance) return;
+
+  // snapshot current text (so restore is correct even if labels change)
+  const snap = els.map(el => [el, el.textContent]);
+
+  const p = 0.03 + intensity * 0.14;
+  for (const [el, txt] of snap){
+    const s = String(txt ?? "");
+    let out = "";
+    for (let i=0;i<s.length;i++){
+      const ch = s[i];
+      if (ch === " " || ch === "\n" || ch === "\t"){ out += ch; continue; }
+      out += (Math.random() < p)
+        ? SCRAMBLE_CHARS[(Math.random()*SCRAMBLE_CHARS.length)|0]
+        : ch;
+    }
+    el.textContent = out;
+  }
+
+  const hold = 110 + Math.random()*240;
+  Timeout(() => {
+    for (const [el, txt] of snap) el.textContent = txt;
+  }, hold);
+
+  uiScrambleCooldown = now + 260 + Math.random()*420;
+}
+
 /* =========================================================
-   glitch / blink / shadow ✅fixed shadow scheduling
+   glitch / blink / shadow
 ========================================================= */
 function glitchPulse(){
   const g = document.querySelector(".glitch-layer");
@@ -394,37 +395,35 @@ function triggerShadow(){
   if (!shadowImg) return;
 
   const now = performance.now();
-  const dur = 420 + Math.random() * 580; // 0.42〜1.0秒
+  const dur = 420 + Math.random() * 580;
   shadowUntil = now + dur;
-
-  // ✅ important: schedule next shadow properly (prevents rapid fire)
   nextShadowAt = now + 3800 + Math.random()*4200;
 
   const dx = (Math.random()*28 - 14).toFixed(1);
   const dy = (Math.random()*28 - 14).toFixed(1);
 
-  shadowImg.style.opacity = ""; // ← 手動上書きを解除
+  shadowImg.style.opacity = "";
   shadowImg.style.zIndex = "";
   shadowImg.style.display = "";
 
   shadowImg.style.transform = `translate(${dx}px, ${dy}px) translateZ(0)`;
   shadowImg.classList.add("on");
 
-  // 半分くらいの確率でグリッチと同期
   if (Math.random() < 0.55) glitchPulse();
 
-  // safety remove (in case shadowUntil check is skipped)
   setTimeout(()=>{ shadowImg?.classList.remove("on"); }, 2000);
 }
 
 /* =========================================================
-   audio (wired hiss) - user gesture required ✅fixed AudioParam API
+   audio (wired hiss) - user gesture required
+   ✅ louder + compressor + NO double destination connect
 ========================================================= */
 let audioCtx = null, master = null;
 let noiseSrc = null, noiseGain = null;
 let humOsc = null, humGain = null;
 let filterLP = null, filterHP = null;
 let wobbleOsc = null, wobbleGain = null;
+let comp = null; // compressor
 
 function makeNoiseBuffer(ac){
   const seconds = 2;
@@ -496,18 +495,16 @@ function ensureAudio(){
   filterHP.connect(filterLP);
   filterLP.connect(master);
 
-   // ✅ limiter-ish compressor
-   const comp = audioCtx.createDynamicsCompressor();
-   comp.threshold.value = -18;
-   comp.knee.value = 12;
-   comp.ratio.value = 8;
-   comp.attack.value = 0.003;
-   comp.release.value = 0.12;
+  // ✅ compressor (limiter-ish)
+  comp = audioCtx.createDynamicsCompressor();
+  comp.threshold.value = -20;
+  comp.knee.value = 14;
+  comp.ratio.value = 10;
+  comp.attack.value = 0.003;
+  comp.release.value = 0.14;
 
-   master.connect(comp);
-   comp.connect(audioCtx.destination);
-
-  master.connect(audioCtx.destination);
+  master.connect(comp);
+  comp.connect(audioCtx.destination);
 
   noiseSrc.start();
   humOsc.start();
@@ -522,7 +519,9 @@ function applyAudioParams(){
   const vol = Number(aVol?.value ?? 26) / 100;
   const tone = Number(aTone?.value ?? 36) / 100;
 
-  master.gain.setTargetAtTime(vol * 0.85, audioCtx.currentTime, 0.03);
+  // ✅ louder scaling: up to 1.0
+  master.gain.setTargetAtTime(vol * 1.0, audioCtx.currentTime, 0.03);
+
   filterLP.frequency.setTargetAtTime(900 + tone * 5200, audioCtx.currentTime, 0.05);
   filterHP.frequency.setTargetAtTime(60 + (1-tone) * 140, audioCtx.currentTime, 0.05);
 
@@ -574,7 +573,6 @@ btnToggle?.addEventListener("click", async () => {
     burst = Math.max(burst, 0.2);
     if (audioCtx){ try{ await audioCtx.resume(); }catch{} }
 
-    // STARTした瞬間に一発（動いてる感）
     const line = injectHorrorText();
     if (line) pushGhostTrace(line);
     nextHorrorAt = performance.now() + 900 + Math.random()*900;
@@ -594,7 +592,6 @@ function loop(){
 
   const drift = Math.sin(tick * 0.03) * 1.7;
 
-  // noise into small buffer
   for (let y=0; y<RH; y++){
     const tear = (Math.random() < (0.004 + glitch*0.02)) ? (Math.random()*10-5) : 0;
     const lineDark = ((y + (drift|0)) % 2 === 0) ? 0.86 : 1.0;
@@ -621,15 +618,12 @@ function loop(){
     }
   }
 
-  // commit -> scale up
   rctx.putImageData(img, 0, 0);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(rCanvas, 0, 0, W, H);
 
-  // overlay glitch
   if (Math.random() < (0.01 + glitch*0.06)) glitchPulse();
 
-  // horror injection
   if (running){
     const now = performance.now();
     if (now >= nextHorrorAt){
@@ -642,7 +636,7 @@ function loop(){
         if (Math.random() < 0.45) triggerShadow();
         if (Math.random() < 0.35) glitchPulse();
 
-        // audio wobble + click (safe) ✅fixed setTargetAtTime/setValueAtTime
+        // audio wobble + click
         if (audioCtx && humOsc && filterLP && noiseGain && master){
           const t0 = audioCtx.currentTime;
 
@@ -668,23 +662,18 @@ function loop(){
 
           click.start(t0);
           cg.gain.setValueAtTime(0.0, t0);
-          cg.gain.linearRampToValueAtTime(0.06, t0 + 0.005);
+          cg.gain.linearRampToValueAtTime(0.08, t0 + 0.005); // slightly louder click
           cg.gain.linearRampToValueAtTime(0.0, t0 + 0.02);
           click.stop(t0 + 0.03);
         }
 
-        if (Math.random() < 0.18){
-          nextHorrorAt = now + 180 + Math.random() * 420;
-        } else {
-          nextHorrorAt = now + 1200 + Math.random() * 2800;
-        }
+        nextHorrorAt = now + (Math.random() < 0.18 ? (180 + Math.random()*420) : (1200 + Math.random()*2800));
       } else {
         nextHorrorAt = now + 900 + Math.random() * 2200;
       }
     }
   }
 
-  // blink / shadow schedule
   const now2 = performance.now();
 
   if (running && now2 >= nextBlinkAt) triggerBlink();
@@ -698,16 +687,14 @@ function loop(){
     shadowImg.classList.remove("on");
   }
 
-  // UI scramble
   const power = Math.min(1, inten*0.9 + glitch*0.7 + burst*0.8);
   maybeScramble(power);
-// ✅ UIもたまに壊す（頻度低め）
-if (running && Math.random() < (0.006 + power*0.02)) scrambleUI(power);
+  if (running) maybeScrambleUI(power);
 
-  // audio base level ✅fixed setTargetAtTime
+  // audio base level (louder)
   if (audioCtx && master){
     const vol = Number(aVol?.value ?? 26) / 100;
-    const target = (running ? vol*0.85 : vol*0.25);
+    const target = (running ? vol*1.0 : vol*0.30);
     master.gain.setTargetAtTime(target, audioCtx.currentTime, 0.06);
   }
 }
