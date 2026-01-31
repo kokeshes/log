@@ -594,3 +594,42 @@ input:focus, select:focus, textarea:focus{
 .boot-bar{ border-color: rgba(120,255,220,.22); }
 .hidden { display: none !important; }
 
+.ghostbox{
+  margin-top: 14px;
+  border: 1px solid rgba(120,255,170,.18);
+  background: rgba(0,0,0,.22);
+  border-radius: 14px;
+  padding: 10px 12px;
+  box-shadow: 0 0 18px rgba(80,255,160,.06);
+}
+.ghost-title{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  letter-spacing: .10em;
+  font-size: 11px;
+  opacity: .9;
+  margin-bottom: 8px;
+}
+.ghost-list{
+  max-height: 160px;
+  overflow:auto;
+  border-radius: 12px;
+  border: 1px solid rgba(120,255,170,.12);
+  background: rgba(0,0,0,.22);
+  padding: 8px;
+}
+.ghost-empty{
+  opacity: .65;
+  font-size: 12px;
+  letter-spacing: .06em;
+}
+.ghost-item{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  letter-spacing: .06em;
+  line-height: 1.4;
+  padding: 6px 6px;
+  border-bottom: 1px dashed rgba(120,255,170,.12);
+}
+.ghost-item:last-child{ border-bottom: none; }
+.ghost-meta{ opacity:.65; font-size: 10px; letter-spacing:.10em; margin-top:2px; }
+
