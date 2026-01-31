@@ -359,18 +359,19 @@ let shadowUntil = 0;
 function triggerShadow(){
   if (!shadowImg) return;
 
-  // 👁 見えるけど確信できない長さ
-  const dur = 380 + Math.random() * 520;
-  shadowUntil = performance.now() + dur;
-  nextShadowAt = performance.now() + 4500 + Math.random() * 6500;
+  const dur = 420 + Math.random() * 580; // 0.42〜1.0秒
+  const now = performance.now();
+  shadowUntil = now + dur;
 
   const dx = (Math.random()*28 - 14).toFixed(1);
   const dy = (Math.random()*28 - 14).toFixed(1);
 
-  shadowImg.style.opacity = "0.9";
+  shadowImg.style.opacity = ""; // ← 手動上書きを解除
+  shadowImg.style.zIndex = "";
+  shadowImg.style.display = "";
+
   shadowImg.style.transform = `translate(${dx}px, ${dy}px) translateZ(0)`;
   shadowImg.classList.add("on");
-
   // 半分くらいの確率でグリッチと同期
   if (Math.random() < 0.55) glitchPulse();
 }
@@ -641,7 +642,10 @@ function loop(){
   }
 
   if (running && now2 >= nextShadowAt) triggerShadow();
-  if (shadowImg && now2 >= shadowUntil) shadowImg.classList.remove("on");
+  if (shadowImg && performance.now() >= shadowUntil){
+  shadowImg.classList.remove("on");
+}
+
 
   // UI scramble
   const power = Math.min(1, inten*0.9 + glitch*0.7 + burst*0.8);
