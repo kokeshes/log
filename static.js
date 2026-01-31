@@ -28,6 +28,8 @@ const vIntensity = $("#vIntensity");
 const vGlitch    = $("#vGlitch");
 const aVol       = $("#aVol");
 const aTone      = $("#aTone");
+// Timeout alias (fix)
+const Timeout = (fn, ms) => window.setTimeout(fn, ms);
 
 if (!canvas || !ctx){
   throw new Error("staticCanvas not found or 2D context failed");
