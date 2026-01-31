@@ -397,16 +397,41 @@ function newEditor(kindOverride = null){
 }
 
 /* ========= SAVE behavior: save -> immediate clear -> next log (keep kind) ========= */
+/* ========= SAVE behavior: save -> immediate clear -> next log (keep kind) ========= */
 async function saveCurrent(){
-  if (!currentUser || !selected) return;
+  // SAVE前：セッション確認（ついでに currentUser を確実に更新）
+  const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+
+  if (sessionErr){
+    setStatus("SESSION CHECK FAILED");
+    window.WiredAudio?.errorSound();
+    alert("セッション確認に失敗しました。通信状態を確認してください。");
+    return;
+  }
+
+  const user = sessionData?.session?.user;
+  if (!user){
+    setStatus("SESSION EXPIRED // RECONNECT REQUIRED");
+    window.WiredAudio?.errorSound();
+    alert("セッションが切れています。再ログインしてください。\n（本文は消えていません）");
+    return;
+  }
+
+  // ✅ currentUser をここで確定させる（放置復帰でnullのまま問題を潰す）
+  currentUser = user;
+
+  // selected が無い＝エディタがまだ開いてない/壊れてる
+  if (!selected){
+    setStatus("EDITOR STATE LOST // RELOAD");
+    window.WiredAudio?.errorSound();
+    alert("エディタ状態が失われました。ページを更新してください。\n（念のため本文をコピーしてから）");
+    return;
+  }
 
   setStatus("SAVE…");
 
-  const keepKindUI = $("#kind").value; // keep for next log
-
-  const rawKind = $("#kind").value;
-  const rawTags = $("#tags").value.split(",").map(s=>s.trim()).filter(Boolean);
-  const mapped = mapHiddenKind(rawKind, rawTags);
+  const keepKindUI = $("#kind")?.value ?? "Note"; // keep for next log
+  // --- ここから下はあなたの既存の payload 生成に続けてOK ---
 
   const payload = {
     kind: mapped.kind,
