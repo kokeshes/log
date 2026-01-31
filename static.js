@@ -53,6 +53,7 @@ function pushGhostTrace(line){
 }
 
 
+// ====== HORROR TEXT ======
 const HORROR_LINES = [
   "do not panic.",
   "observe.",
@@ -70,16 +71,13 @@ const HORROR_LINES = [
   "LOG CORRUPTED // observe",
   "ERR_001 // identity mismatch",
   "TRACE LOST // wired node",
-
 ];
 
+// 次にホラーを出す時刻（出すぎ防止）
+let nextHorrorAt = performance.now() + 2500;
 
-const vIntensity = $("#vIntensity");
-const vGlitch = $("#vGlitch");
-const aVol = $("#aVol");
-const aTone = $("#aTone");
-
-  // 30%はUI、70%はフローティング表示
+function injectHorrorText(){
+  const line = HORROR_LINES[(Math.random() * HORROR_LINES.length) | 0];
   if (Math.random() < 0.3){
     injectIntoUI(line);
   } else {
@@ -92,7 +90,7 @@ function injectIntoUI(line){
   const targets = document.querySelectorAll("[data-scramble='1']");
   if (!targets.length) return;
 
-  const el = targets[Math.floor(Math.random() * targets.length)];
+  const el = targets[(Math.random() * targets.length) | 0];
   const original = el.textContent;
 
   el.textContent = line;
@@ -126,295 +124,12 @@ function injectFloatingText(line){
   setTimeout(()=>{ div.remove(); }, 1400);
 }
 
-  setTimeout(()=>{
-    div.style.opacity = "0";
-  }, 500 + Math.random()*700);
-
-  setTimeout(()=>{
-    div.remove();
-  }, 1400);
-}
-
-
-if (!canvas || !ctx){
-  throw new Error("staticCanvas not found or context failed");
-}
-
-/* ====== light, PS1-ish render: draw small buffer then scale ====== */
-let DPR = 1, W = 0, H = 0;
-let RW = 0, RH = 0;                 // render size (small)
-let rCanvas = document.createElement("canvas");
-let rctx = rCanvas.getContext("2d", { alpha:false });
-let img = null, data = null;
-let nextHorrorAt = performance.now() + 2500;
-
-function resize(){
-  DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-  W = Math.max(2, Math.floor(innerWidth * DPR));
-  H = Math.max(2, Math.floor(innerHeight * DPR));
-
-  canvas.width = W; canvas.height = H;
-  if (blinkCanvas){ blinkCanvas.width = W; blinkCanvas.height = H; }
-
-  // PS1 scale factor: smaller buffer => chunkier pixels
-  const scale = (innerWidth < 720) ? 3.0 : 2.4;
-  RW = Math.max(140, Math.floor(W / scale));
-  RH = Math.max(120, Math.floor(H / scale));
-
-  rCanvas.width = RW; rCanvas.height = RH;
-  img = rctx.createImageData(RW, RH);
-  data = img.data;
-
-  if (badge) badge.textContent = `STATIC READY // ${W}x${H} DPR${DPR} // R ${RW}x${RH}`;
-}
-addEventListener("resize", resize);
-resize();
-
-/* ====== UI scramble ====== */
-const SCRAMBLE_CHARS =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_#@$%+*-=<>[]{}" +
-  "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ" +
-  "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワン" +
-  "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわん" +
-  "／＼｜＿＝＋＊＠＃％＆！？：；…・「」『』（）［］｛｝〈〉《》";
-
-const scrambleTargets = Array.from(document.querySelectorAll("[data-scramble='1']"))
-  .map(el => ({ el, base: el.textContent }));
-
-let scrambleCooldown = 0;
-function scrambleOnce(intensity){
-  const p = 0.06 + intensity*0.18;
-  for (const t of scrambleTargets){
-    const s = t.base;
-    let out = "";
-    for (let i=0;i<s.length;i++){
-      const ch = s[i];
-      if (ch === " " || ch === "\n" || ch === "\t"){ out += ch; continue; }
-      out += (Math.random() < p) ? SCRAMBLE_CHARS[(Math.random()*SCRAMBLE_CHARS.length)|0] : ch;
-    }
-    t.el.textContent = out;
-  }
-  setTimeout(()=>{ for (const t of scrambleTargets) t.el.textContent = t.base; }, 90 + Math.random()*140);
-}
-function maybeScramble(intensity){
-  const now = performance.now();
-  if (now < scrambleCooldown) return;
-  const chance = 0.02 + intensity*0.07;
-  if (Math.random() < chance){
-    scrambleOnce(intensity);
-    scrambleCooldown = now + 420 + Math.random()*540;
-  }
-}
-
-/* ====== glitch pulse overlay ====== */
-function glitchPulse(){
-  const g = document.querySelector(".glitch-layer");
-  if (!g) return;
-  g.style.opacity = "1";
-  g.style.transform = `translate(${(Math.random()*10-5).toFixed(1)}px, ${(Math.random()*10-5).toFixed(1)}px)`;
-  setTimeout(()=>{ g.style.opacity = "0"; }, 80 + Math.random()*140);
-}
-
-/* ====== blink mosaic ====== */
-let nextBlinkAt = performance.now() + 2200 + Math.random()*2600;
-let blinkUntil = 0;
-
-function triggerBlink(){
-  if (!bctx || !blinkCanvas) return;
-  const dur = 120 + Math.random()*160;
-  blinkUntil = performance.now() + dur;
-  nextBlinkAt = performance.now() + 2200 + Math.random()*3200;
-
-  bctx.clearRect(0,0,W,H);
-  const block = Math.max(10, Math.floor((10 + Math.random()*26) * DPR));
-  const alphaBase = 0.22 + Math.random()*0.32;
-
-  for (let y=0; y<H; y+=block){
-    for (let x=0; x<W; x+=block){
-      if (Math.random() < 0.22){
-        const v = 180 + Math.random()*70;
-        bctx.fillStyle = `rgba(${Math.floor(v*0.8)},${Math.floor(v)},${Math.floor(v*0.85)},${alphaBase})`;
-        bctx.fillRect(x, y, block, block);
-      }
-    }
-  }
-
-  const lines = 4 + ((Math.random()*8)|0);
-  for (let i=0;i<lines;i++){
-    const y = (Math.random()*H)|0;
-    const h = Math.max(2, Math.floor((1+Math.random()*3)*DPR));
-    bctx.fillStyle = `rgba(170,255,210,${0.10 + Math.random()*0.18})`;
-    bctx.fillRect(0, y, W, h);
-  }
-
-  blinkCanvas.classList.add("on");
-}
-
-/* ====== shadow apparition ====== */
-let nextShadowAt = performance.now() + 3800 + Math.random()*4200;
-let shadowUntil = 0;
-
-function triggerShadow(){
-  if (!shadowImg) return;
-  const dur = 100 + Math.random()*120;
-  shadowUntil = performance.now() + dur;
-  nextShadowAt = performance.now() + 4000 + Math.random()*6000;
-
-  const dx = (Math.random()*18 - 9).toFixed(1);
-  const dy = (Math.random()*18 - 9).toFixed(1);
-  shadowImg.style.transform = `translate(${dx}px, ${dy}px) translateZ(0)`;
-  shadowImg.classList.add("on");
-  if (Math.random() < 0.7) glitchPulse();
-}
-
-/* ====== audio (wired hiss) ====== */
-let audioCtx = null, master = null;
-let noiseSrc = null, noiseGain = null;
-let humOsc = null, humGain = null;
-let filterLP = null, filterHP = null;
-let wobbleOsc = null, wobbleGain = null;
-
-function makeNoiseBuffer(ac){
-  const seconds = 2;
-  const buffer = ac.createBuffer(1, ac.sampleRate * seconds, ac.sampleRate);
-  const arr = buffer.getChannelData(0);
-
-  let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
-  for (let i=0;i<arr.length;i++){
-    const white = Math.random()*2-1;
-    b0 = 0.99886*b0 + white*0.0555179;
-    b1 = 0.99332*b1 + white*0.0750759;
-    b2 = 0.96900*b2 + white*0.1538520;
-    b3 = 0.86650*b3 + white*0.3104856;
-    b4 = 0.55000*b4 + white*0.5329522;
-    b5 = -0.7616*b5 - white*0.0168980;
-    const pink = (b0+b1+b2+b3+b4+b5+b6 + white*0.5362) * 0.11;
-    b6 = white*0.115926;
-    arr[i] = pink;
-  }
-  return buffer;
-}
-
-function ensureAudio(){
-  if (audioCtx) return;
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-  master = audioCtx.createGain();
-  master.gain.value = 0.0;
-
-  noiseSrc = audioCtx.createBufferSource();
-  noiseSrc.buffer = makeNoiseBuffer(audioCtx);
-  noiseSrc.loop = true;
-
-  noiseGain = audioCtx.createGain();
-  noiseGain.gain.value = 0.26;
-
-  humOsc = audioCtx.createOscillator();
-  humOsc.type = "sine";
-  humOsc.frequency.value = 50;
-
-  humGain = audioCtx.createGain();
-  humGain.gain.value = 0.06;
-
-  filterHP = audioCtx.createBiquadFilter();
-  filterHP.type = "highpass";
-  filterHP.frequency.value = 80;
-
-  filterLP = audioCtx.createBiquadFilter();
-  filterLP.type = "lowpass";
-  filterLP.frequency.value = 2200;
-
-  wobbleOsc = audioCtx.createOscillator();
-  wobbleOsc.type = "sine";
-  wobbleOsc.frequency.value = 0.22;
-
-  wobbleGain = audioCtx.createGain();
-  wobbleGain.gain.value = 12;
-
-  wobbleOsc.connect(wobbleGain);
-  wobbleGain.connect(humOsc.frequency);
-
-  const mix = audioCtx.createGain();
-  mix.gain.value = 1;
-
-  noiseSrc.connect(noiseGain); noiseGain.connect(mix);
-  humOsc.connect(humGain); humGain.connect(mix);
-
-  mix.connect(filterHP);
-  filterHP.connect(filterLP);
-  filterLP.connect(master);
-  master.connect(audioCtx.destination);
-
-  noiseSrc.start();
-  humOsc.start();
-  wobbleOsc.start();
-
-  applyAudioParams();
-}
-
-function applyAudioParams(){
-  if (!audioCtx) return;
-  const vol = Number(aVol?.value ?? 26) / 100;
-  const tone = Number(aTone?.value ?? 36) / 100;
-
-  master.gain.setTargetAtTime(vol * 0.36, audioCtx.currentTime, 0.03);
-  filterLP.frequency.setTargetAtTime(900 + tone * 5200, audioCtx.currentTime, 0.05);
-  filterHP.frequency.setTargetAtTime(60 + (1-tone) * 140, audioCtx.currentTime, 0.05);
-
-  humGain.gain.setTargetAtTime(0.03 + tone * 0.10, audioCtx.currentTime, 0.06);
-  noiseGain.gain.setTargetAtTime(0.18 + (1-tone) * 0.22, audioCtx.currentTime, 0.06);
-}
-
-aVol?.addEventListener("input", applyAudioParams);
-aTone?.addEventListener("input", applyAudioParams);
-
-btnEnable?.addEventListener("click", async ()=>{
-  ensureAudio();
-  await audioCtx.resume();
-  btnEnable.textContent = "AUDIO READY";
-});
-
-/* ====== controls ====== */
-let running = false;
-let burst = 0;
-let tick = 0;
-
-btnBurst?.addEventListener("click", ()=>{
-  burst = 1.0;
-  glitchPulse();
-  if (Math.random() < 0.6) triggerBlink();
-  if (Math.random() < 0.55) triggerShadow();
-});
-
-btnCalm?.addEventListener("click", ()=>{
-  burst = 0.0;
-  blinkCanvas?.classList.remove("on");
-  bctx?.clearRect(0,0,W,H);
-  shadowImg?.classList.remove("on");
-});
-
-btnToggle?.addEventListener("click", async ()=>{
-  running = !running;
-  btnToggle.textContent = running ? "STOP" : "START";
-
-  try{
-    if (running) await bgVideo?.play?.();
-    else bgVideo?.pause?.();
-  }catch(e){}
-
-  if (running){
-    burst = Math.max(burst, 0.2);
-    if (audioCtx){ try{ await audioCtx.resume(); }catch(e){} }
-  }
-});
-
-/* ====== main loop ====== */
-/* ====== main loop ====== */
+// ====== main loop ======
 function loop(){
   requestAnimationFrame(loop);
   tick++;
 
-  const inten = (Number(vIntensity?.value ?? 70) / 100) * (running ? 1 : 0.35);
+  const inten  = (Number(vIntensity?.value ?? 70) / 100) * (running ? 1 : 0.35);
   const glitch = (Number(vGlitch?.value ?? 38) / 100) * (running ? 1 : 0.4) + burst * 0.7;
   burst = Math.max(0, burst - 0.01);
 
@@ -427,7 +142,7 @@ function loop(){
 
     for (let x = 0; x < RW; x++){
       let v = Math.random() * 255;
-      v = (128 + (v - 128) * (0.45 + inten * 1.0));
+      v = 128 + (v - 128) * (0.45 + inten * 1.0);
       v = Math.max(0, Math.min(255, v));
 
       if (Math.random() < (0.008 + glitch * 0.03)) v = Math.min(255, v + 60);
@@ -448,72 +163,65 @@ function loop(){
     }
   }
 
-  // commit small buffer -> scale up (pixelated)
+  // commit small buffer -> scale up
   rctx.putImageData(img, 0, 0);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(rCanvas, 0, 0, W, H);
 
-  // occasional overlay glitch
+  // overlay glitch
   if (Math.random() < (0.01 + glitch * 0.06)) glitchPulse();
 
-  // ---- horror injection (cooldown-based) ----
+  // ---- horror injection + trace + audio sync ----
   if (running){
     const now = performance.now();
-
-    // まだクールダウン中なら何もしない
     if (now >= nextHorrorAt){
-      // 「強度が高いほど起きやすい」判定（1回/クールダウン）
       const chance = 0.12 + (inten * 0.18) + (glitch * 0.25);
 
-     if (Math.random() < chance){
-     const line = injectHorrorText();   // ← 返り値をもらう
-     if (line) pushGhostTrace(line);    // ← 痕跡として保存
+      if (Math.random() < chance){
+        const line = injectHorrorText();
+        if (line) pushGhostTrace(line);
 
-        // たまに影・グリッチと同期（怖さ増幅）
         if (Math.random() < 0.45) triggerShadow();
         if (Math.random() < 0.35) glitchPulse();
-          // ---- audio wobble sync (horror moment) ----
-        if (audioCtx && humOsc && filterLP && noiseGain){
-        // 一瞬だけ回線が歪む：低音が揺れる＋帯域が狭まる
-        const t0 = audioCtx.currentTime;
 
-         // ハム周波数を一瞬変える（Lainっぽい不快なズレ）
-        humOsc.frequency.cancelScheduledValues(t0);
-        humOsc.frequency.setTargetAtTime(40 + Math.random()*90, t0, 0.02);
-        humOsc.frequency.setTargetAtTime(50, t0 + 0.18, 0.10);
+        // audio wobble + click (safe)
+        if (audioCtx && humOsc && filterLP && noiseGain && master){
+          const t0 = audioCtx.currentTime;
 
-        // ローパスを一瞬絞って“遠くなる”
-        filterLP.frequency.cancelScheduledValues(t0);
-        filterLP.frequency.setTargetAtTime(600 + Math.random()*900, t0, 0.03);
-        filterLP.frequency.setTargetAtTime(2200, t0 + 0.22, 0.12);
+          humOsc.frequency.cancelScheduledValues(t0);
+          humOsc.frequency.setTargetAtTime(40 + Math.random()*90, t0, 0.02);
+          humOsc.frequency.setTargetAtTime(50, t0 + 0.18, 0.10);
 
-        // ノイズ量を一瞬上げる
-        noiseGain.gain.cancelScheduledValues(t0);
-        noiseGain.gain.setTargetAtTime(0.32 + Math.random()*0.18, t0, 0.03);
-        noiseGain.gain.setTargetAtTime(0.26, t0 + 0.25, 0.12);
-  }
-        // “コツッ”とデジタルクリック（超小音量）
-        const click = audioCtx.createOscillator();
-        const cg = audioCtx.createGain();
-        click.type = "square";
-        click.frequency.value = 1200 + Math.random()*800;
-        cg.gain.value = 0.0;
-        click.connect(cg); cg.connect(master);
-        click.start(t0);
-        cg.gain.setValueAtTime(0.0, t0);
-        cg.gain.linearRampToValueAtTime(0.06, t0 + 0.005);
-        cg.gain.linearRampToValueAtTime(0.0, t0 + 0.02);
-        click.stop(t0 + 0.03);
+          filterLP.frequency.cancelScheduledValues(t0);
+          filterLP.frequency.setTargetAtTime(600 + Math.random()*900, t0, 0.03);
+          filterLP.frequency.setTargetAtTime(2200, t0 + 0.22, 0.12);
 
+          noiseGain.gain.cancelScheduledValues(t0);
+          noiseGain.gain.setTargetAtTime(0.32 + Math.random()*0.18, t0, 0.03);
+          noiseGain.gain.setTargetAtTime(0.26, t0 + 0.25, 0.12);
 
-        // 連続で来る“波”をたまに発生させる
+          const click = audioCtx.createOscillator();
+          const cg = audioCtx.createGain();
+          click.type = "square";
+          click.frequency.value = 1200 + Math.random()*800;
+          cg.gain.value = 0.0;
+          click.connect(cg);
+          cg.connect(master);
+
+          click.start(t0);
+          cg.gain.setValueAtTime(0.0, t0);
+          cg.gain.linearRampToValueAtTime(0.06, t0 + 0.005);
+          cg.gain.linearRampToValueAtTime(0.0, t0 + 0.02);
+          click.stop(t0 + 0.03);
+        }
+
+        // next horror timing (sometimes "wave")
         if (Math.random() < 0.18){
-          nextHorrorAt = now + 180 + Math.random() * 420; // 0.18〜0.6秒で追撃
+          nextHorrorAt = now + 180 + Math.random() * 420;
         } else {
-          nextHorrorAt = now + 1200 + Math.random() * 2800; // 通常：1.2〜4.0秒
+          nextHorrorAt = now + 1200 + Math.random() * 2800;
         }
       } else {
-        // 外れたら少し先へ（試行回数を自然に）
         nextHorrorAt = now + 900 + Math.random() * 2200;
       }
     }
@@ -531,11 +239,11 @@ function loop(){
   if (running && now2 >= nextShadowAt) triggerShadow();
   if (shadowImg && now2 >= shadowUntil) shadowImg.classList.remove("on");
 
-  // UI scramble (ties to "power")
+  // UI scramble
   const power = Math.min(1, inten * 0.9 + glitch * 0.7 + burst * 0.8);
   maybeScramble(power);
 
-  // audio tie-in
+  // audio base level
   if (audioCtx && master){
     const vol = Number(aVol?.value ?? 26) / 100;
     const target = (running ? vol * 0.36 : vol * 0.14);
@@ -543,35 +251,4 @@ function loop(){
   }
 }
 
-
-
-  rctx.putImageData(img, 0, 0);
-
-  // scale up (pixelated)
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(rCanvas, 0, 0, W, H);
-
-  // occasional overlay glitch
-  if (Math.random() < (0.01 + glitch*0.06)) glitchPulse();
-
-  const now = performance.now();
-  if (running && now >= nextBlinkAt) triggerBlink();
-  if (blinkCanvas && now >= blinkUntil){
-    blinkCanvas.classList.remove("on");
-    bctx?.clearRect(0,0,W,H);
-  }
-
-  if (running && now >= nextShadowAt) triggerShadow();
-  if (shadowImg && now >= shadowUntil) shadowImg.classList.remove("on");
-
-  const power = Math.min(1, inten*0.9 + glitch*0.7 + burst*0.8);
-  maybeScramble(power);
-
-  // audio tie-in
-  if (audioCtx && master){
-    const vol = Number(aVol?.value ?? 26)/100;
-    const target = (running ? vol*0.36 : vol*0.14);
-    master.gain.setTargetAtTime(target, audioCtx.currentTime, 0.06);
-  }
-}
 loop();
