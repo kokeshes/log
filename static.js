@@ -80,6 +80,56 @@ addEventListener("keydown", (e)=>{
     setUIOff(off, off);
   }
 });
+/* =========================================================
+   MOBILE UI TOGGLE (long-press / 3-finger tap)
+========================================================= */
+
+// 長押し（650ms）でUIトグル：誤爆しにくい
+let lpTimer = null;
+let lpMoved = false;
+
+function clearLongPress(){
+  if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+}
+
+addEventListener("touchstart", (e)=>{
+  // UI上のボタン操作を邪魔しない
+  const t = e.target;
+  if (t && (t.closest?.(".static-ui") || t.closest?.("#btnUI"))) return;
+
+  lpMoved = false;
+  clearLongPress();
+  lpTimer = setTimeout(()=>{
+    // 長押し成立 → UI切替
+    const off = !document.body.classList.contains("ui-off");
+    setUIOff(off, off);   // off時はヒント表示
+    try{ burst = Math.max(burst, 0.25); }catch{}
+  }, 650);
+}, { passive: true });
+
+addEventListener("touchmove", ()=>{
+  lpMoved = true;
+  clearLongPress(); // スクロールし始めたらキャンセル
+}, { passive: true });
+
+addEventListener("touchend", ()=>{
+  clearLongPress();
+}, { passive: true });
+
+addEventListener("touchcancel", ()=>{
+  clearLongPress();
+}, { passive: true });
+
+
+// 3本指タップでもトグル（アクセシブルな隠しコマンド）
+addEventListener("touchstart", (e)=>{
+  if (e.touches && e.touches.length === 3){
+    // 3本指なら即トグル
+    const off = !document.body.classList.contains("ui-off");
+    setUIOff(off, off);
+  }
+}, { passive: true });
+
 
 /* =========================================================
    GHOST TRACE (local only; NOT saved to Supabase)
