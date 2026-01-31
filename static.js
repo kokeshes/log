@@ -79,9 +79,6 @@ const vGlitch = $("#vGlitch");
 const aVol = $("#aVol");
 const aTone = $("#aTone");
 
-function injectHorrorText(){
-  const line = HORROR_LINES[Math.floor(Math.random() * HORROR_LINES.length)];
-
   // 30%はUI、70%はフローティング表示
   if (Math.random() < 0.3){
     injectIntoUI(line);
@@ -128,44 +125,6 @@ function injectFloatingText(line){
   setTimeout(()=>{ div.style.opacity = "0"; }, 500 + Math.random()*700);
   setTimeout(()=>{ div.remove(); }, 1400);
 }
-
-function injectIntoUI(){
-  const targets = document.querySelectorAll("[data-scramble='1']");
-  if (!targets.length) return;
-
-  const el = targets[Math.floor(Math.random() * targets.length)];
-  const original = el.textContent;
-  const line = HORROR_LINES[Math.floor(Math.random() * HORROR_LINES.length)];
-
-  el.textContent = line;
-
-  setTimeout(()=>{
-    el.textContent = original;
-  }, 400 + Math.random()*600);
-}
-
-function injectFloatingText(){
-  const div = document.createElement("div");
-  div.textContent = HORROR_LINES[Math.floor(Math.random() * HORROR_LINES.length)];
-
-  div.style.position = "fixed";
-  div.style.left = (10 + Math.random()*80) + "vw";
-  div.style.top  = (10 + Math.random()*70) + "vh";
-  div.style.zIndex = 5;
-  div.style.pointerEvents = "none";
-  div.style.opacity = "0";
-  div.style.fontFamily = "ui-monospace, Menlo, Consolas, monospace";
-  div.style.fontSize = "12px";
-  div.style.letterSpacing = ".12em";
-  div.style.color = "#baffd8";
-  div.style.textShadow = "0 0 12px rgba(120,255,180,.45)";
-
-  document.body.appendChild(div);
-
-  requestAnimationFrame(()=>{
-    div.style.transition = "opacity .2s linear";
-    div.style.opacity = "0.9";
-  });
 
   setTimeout(()=>{
     div.style.opacity = "0";
