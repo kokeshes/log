@@ -323,7 +323,7 @@ let blinkUntil = 0;
 function triggerBlink(){
   if (!bctx || !blinkCanvas) return;
 
-  const dur = 120 + Math.random()*160;
+  const dur = 120 + Math.random()*510;
   blinkUntil = performance.now() + dur;
   nextBlinkAt = performance.now() + 2200 + Math.random()*3200;
 
@@ -359,17 +359,22 @@ let shadowUntil = 0;
 function triggerShadow(){
   if (!shadowImg) return;
 
-  const dur = 100 + Math.random()*120;
+  // 👁 見えるけど確信できない長さ
+  const dur = 380 + Math.random() * 520;
   shadowUntil = performance.now() + dur;
-  nextShadowAt = performance.now() + 4000 + Math.random()*6000;
+  nextShadowAt = performance.now() + 4500 + Math.random() * 6500;
 
-  const dx = (Math.random()*18 - 9).toFixed(1);
-  const dy = (Math.random()*18 - 9).toFixed(1);
+  const dx = (Math.random()*28 - 14).toFixed(1);
+  const dy = (Math.random()*28 - 14).toFixed(1);
+
+  shadowImg.style.opacity = "0.9";
   shadowImg.style.transform = `translate(${dx}px, ${dy}px) translateZ(0)`;
   shadowImg.classList.add("on");
 
-  if (Math.random() < 0.7) glitchPulse();
+  // 半分くらいの確率でグリッチと同期
+  if (Math.random() < 0.55) glitchPulse();
 }
+
 
 /* =========================================================
    audio (wired hiss) - user gesture required
