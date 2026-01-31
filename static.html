@@ -10,76 +10,83 @@
   <link rel="stylesheet" href="./styles.css" />
 
   <style>
-    /* --- STATIC page layout --- */
     .static-shell{ position: relative; min-height: 100vh; overflow: hidden; }
+
+    /* Background video (optional) */
     .static-video{
-      position: fixed; inset: 0; z-index: 0;
-      width: 100%; height: 100%; object-fit: cover;
-      opacity: .62; filter: contrast(1.05) saturate(.85) brightness(.85);
-      transform: translateZ(0); pointer-events: none;
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: .62;
+      filter: contrast(1.05) saturate(.85) brightness(.85);
+      transform: translateZ(0);
+      pointer-events: none;
     }
+
+    /* Canvas noise layer */
     .static-stage{ position: fixed; inset: 0; z-index: 1; }
     #staticCanvas{ width: 100%; height: 100%; display:block; image-rendering: pixelated; }
+
+    /* Blink mosaic layer */
     #blinkLayer{
-      position: fixed; inset: 0; z-index: 2;
-      pointer-events: none; opacity: 0;
-      mix-blend-mode: screen; filter: contrast(1.2) saturate(.9);
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      opacity: 0;
+      mix-blend-mode: screen;
+      filter: contrast(1.2) saturate(.9);
       transform: translateZ(0);
     }
     #blinkLayer.on{ opacity: .9; }
-    .static-overlay{ position: fixed; inset: 0; pointer-events:none; z-index: 3; }
-    .static-ui{
-      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
-      z-index: 4; width: min(980px, calc(100% - 24px));
-      display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 10px;
-      align-items: end;
-    }
-    .static-panel{
-      border: 1px solid rgba(120,255,170,.22);
-      background: rgba(0,0,0,.35);
-      padding: 10px 12px; border-radius: 12px;
-      backdrop-filter: blur(6px);
-      box-shadow: 0 0 18px rgba(80,255,160,.08);
-    }
-    .static-title{
-      font-family: ui-monospace, Menlo, Consolas, monospace;
-      letter-spacing: .10em; font-size: 12px; opacity: .9; margin-bottom: 6px;
-    }
-    .static-row{ display:flex; gap:8px; align-items:center; justify-content: space-between; }
-    .static-row label{
-      width:100%; display:flex; gap:8px; align-items:center;
-      font-size: 12px; opacity: .9;
-      font-family: ui-monospace, Menlo, Consolas, monospace;
-      letter-spacing: .08em;
-    }
-    .static-row input[type="range"]{ width:100%; }
 
-    /* PS1-ish overlay entity */
+    /* Reuse vibes (from styles.css overlays) */
+    .static-overlay{ position: fixed; inset: 0; pointer-events:none; z-index: 3; }
+
+    /* Shadow apparition */
     #shadowImg{
-      position: fixed; inset: 0; margin:auto;
+      position: fixed;
+      inset: 0;
+      margin: auto;
       width: min(520px, 70vw);
-      opacity: 0; z-index: 3; pointer-events: none;
-      filter: contrast(1.1) saturate(.8) brightness(.75);
+      opacity: 0;
+      z-index: 3;
+      pointer-events: none;
+      filter: contrast(1.12) saturate(.8) brightness(.70);
       mix-blend-mode: screen;
       transform: translateZ(0);
     }
     #shadowImg.on{ opacity: .55; }
 
-    /* small diag */
+    /* DIAG */
     #diag{
-      position: fixed; left: 12px; top: 12px; z-index: 5;
-      padding: 8px 10px; border-radius: 12px;
+      position: fixed;
+      left: 12px;
+      top: 12px;
+      z-index: 5;
+      padding: 8px 10px;
+      border-radius: 12px;
       border: 1px solid rgba(120,255,170,.18);
       background: rgba(0,0,0,.28);
       font-family: ui-monospace, Menlo, Consolas, monospace;
-      letter-spacing: .08em; font-size: 11px; opacity: .9;
+      letter-spacing: .08em;
+      font-size: 11px;
+      opacity: .9;
       max-width: calc(100% - 24px);
     }
 
-    /* hidden scramble targets (for injectIntoUI) */
+    /* Scramble targets (injectIntoUI uses these) */
     .scramble-zone{
-      position: fixed; right: 12px; top: 12px; z-index: 5;
-      display:flex; flex-direction: column; gap: 6px;
+      position: fixed;
+      right: 12px;
+      top: 12px;
+      z-index: 5;
+      display:flex;
+      flex-direction: column;
+      gap: 6px;
       align-items: flex-end;
       pointer-events: none;
     }
@@ -89,25 +96,115 @@
       border: 1px solid rgba(120,255,170,.14);
       background: rgba(0,0,0,.25);
       font-family: ui-monospace, Menlo, Consolas, monospace;
-      letter-spacing: .12em; font-size: 11px; opacity: .85;
+      letter-spacing: .12em;
+      font-size: 11px;
+      opacity: .85;
       text-shadow: 0 0 10px rgba(120,255,180,.35);
       max-width: min(72vw, 520px);
-      white-space: nowrap; overflow:hidden; text-overflow: ellipsis;
+      white-space: nowrap;
+      overflow:hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* UI panel */
+    .static-ui{
+      position: fixed;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      z-index: 4;
+      width: min(980px, calc(100% - 24px));
+      display: grid;
+      grid-template-columns: 1.2fr 1fr 1fr;
+      gap: 10px;
+      align-items: end;
+    }
+    .static-panel{
+      border: 1px solid rgba(120,255,170,.22);
+      background: rgba(0,0,0,.35);
+      padding: 10px 12px;
+      border-radius: 12px;
+      backdrop-filter: blur(6px);
+      box-shadow: 0 0 18px rgba(80,255,160,.08);
+    }
+    .static-title{
+      font-family: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+      letter-spacing: .10em;
+      font-size: 12px;
+      opacity: .9;
+      margin-bottom: 6px;
+    }
+    .static-row{ display:flex; gap:8px; align-items:center; justify-content: space-between; }
+    .static-row label{
+      width:100%;
+      display:flex;
+      gap:8px;
+      align-items:center;
+      font-size: 12px;
+      opacity: .9;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      letter-spacing: .08em;
+    }
+    .static-row input[type="range"]{ width:100%; }
+
+    /* --- UI TOGGLE (nice fade) --- */
+    body.ui-off .static-ui{
+      opacity: 0;
+      transform: translateX(-50%) translateY(18px);
+      pointer-events:none;
+    }
+    body.ui-off #diag{
+      opacity: 0;
+      pointer-events:none;
+    }
+    body.ui-off .scramble-zone{
+      opacity: .14;
+    }
+    body.ui-off .static-ui,
+    body.ui-off #diag{
+      transition: opacity .25s ease, transform .25s ease;
+    }
+
+    /* hint */
+    #uiHint{
+      position: fixed;
+      left: 50%;
+      top: 18px;
+      transform: translateX(-50%);
+      z-index: 99999;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(120,255,170,.18);
+      background: rgba(0,0,0,.30);
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      letter-spacing: .14em;
+      font-size: 11px;
+      opacity: 0;
+      pointer-events: none;
+      text-shadow: 0 0 12px rgba(120,255,180,.35);
+      transition: opacity .18s ease;
+    }
+    #uiHint.on{ opacity: .92; }
+
+    /* force UI top & avoid overlay capture */
+    .static-ui, #diag, .scramble-zone{ z-index: 99999; }
+    .static-overlay, .scanlines, .vignette, .dither, .warp, .glitch-layer{
+      pointer-events: none !important;
     }
   </style>
 </head>
 
 <body class="static-shell">
-  <!-- optional background video (you can delete if not used) -->
+  <!-- optional background video -->
   <video id="bgVideo" class="static-video" autoplay muted loop playsinline>
-    <!-- MP4 is optional. If you don't have one, just leave it empty or remove the <video> tag. -->
+    <!-- MP4は任意。無くても動く。用意するなら assets/static.mp4 として置く -->
     <!-- <source src="./assets/static.mp4" type="video/mp4" /> -->
   </video>
 
   <canvas id="staticCanvas" class="static-stage"></canvas>
   <canvas id="blinkLayer"></canvas>
 
-  <!-- overlay -->
+  <!-- overlays -->
   <div class="static-overlay scanlines"></div>
   <div class="static-overlay vignette"></div>
   <div class="static-overlay dither"></div>
@@ -120,11 +217,15 @@
   <!-- diag -->
   <div id="diag">LOADING JS...</div>
 
-  <!-- scramble targets (injectIntoUI uses these) -->
+  <!-- hint -->
+  <div id="uiHint">observe // press U</div>
+
+  <!-- scramble targets -->
   <div class="scramble-zone" aria-hidden="true">
     <div class="scramble-pill" data-scramble="1">PRESENT TIME. PRESENT DAY.</div>
+    <div class="scramble-pill" data-scramble="1">YOU ARE CONNECTED.</div>
     <div class="scramble-pill" data-scramble="1">DO NOT PANIC. OBSERVE.</div>
-    <div class="scramble-pill" data-scramble="1">NODE // STATIC ROOM</div>
+    <div class="scramble-pill" data-scramble="1">THE WIRED IS ALWAYS LISTENING.</div>
   </div>
 
   <!-- UI -->
@@ -152,6 +253,7 @@
       <div class="static-title">AUDIO / WIRED HISS</div>
       <div class="static-row">
         <button id="btnEnable" class="pill">ENABLE AUDIO</button>
+        <button id="btnUI" class="pill ghost">UI: ON</button>
       </div>
       <div class="static-row" style="margin-top:8px;">
         <label>VOLUME
@@ -170,9 +272,10 @@
       <div class="static-row">
         <a class="pill ghost" href="./index.html">BACK TO LOG</a>
         <button class="pill ghost" onclick="location.reload()">RELOAD</button>
+        <span style="opacity:.7; font-size:11px; letter-spacing:.12em; font-family: ui-monospace, Menlo, Consolas, monospace;">U: UI toggle</span>
       </div>
       <div class="static-row" style="margin-top:8px; opacity:.85; font-size:12px; letter-spacing:.08em; font-family: ui-monospace, Menlo, Consolas, monospace;">
-        Tip: Just Observe.
+        Tip: START → text. LOG側へ戻るとTRACEが残る。
       </div>
     </div>
   </div>
@@ -180,3 +283,4 @@
   <script type="module" src="./static.js"></script>
 </body>
 </html>
+
