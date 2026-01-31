@@ -1,9 +1,12 @@
 /* =========================================================
    STATIC ROOM // THE WIRED
-   full replace static.js (stable + UI toggle)
+   full replace static.js (stable + UI toggle)  ✅fixed
 ========================================================= */
 
 const $ = (s) => document.querySelector(s);
+
+// ✅ Timeout alias (your code uses Timeout(...) everywhere)
+const Timeout = (fn, ms) => window.setTimeout(fn, ms);
 
 /* ---------- DOM ---------- */
 const badge = $("#diag");
@@ -28,8 +31,6 @@ const vIntensity = $("#vIntensity");
 const vGlitch    = $("#vGlitch");
 const aVol       = $("#aVol");
 const aTone      = $("#aTone");
-// Timeout alias (fix)
-const Timeout = (fn, ms) => window.setTimeout(fn, ms);
 
 if (!canvas || !ctx){
   throw new Error("staticCanvas not found or 2D context failed");
@@ -43,7 +44,7 @@ function logDiag(msg){
 }
 
 /* =========================================================
-   UI TOGGLE (persist + hint)
+   UI TOGGLE (persist + hint) ✅fixed localStorage + Timeout
 ========================================================= */
 const UI_KEY = "wired_static_ui_off_v1";
 
@@ -55,7 +56,7 @@ function hintOnce(){
 
 function UIOff(off, showHint=false){
   document.body.classList.toggle("ui-off", !!off);
-  try{ localStorage.Item(UI_KEY, off ? "1" : "0"); }catch{}
+  try{ localStorage.setItem(UI_KEY, off ? "1" : "0"); }catch{}
   if (btnUI) btnUI.textContent = off ? "UI: OFF" : "UI: ON";
   if (showHint) hintOnce();
   if (!off) { try{ glitchPulse(); }catch{} }
@@ -82,6 +83,7 @@ addEventListener("keydown", (e)=>{
     UIOff(off, off);
   }
 });
+
 /* =========================================================
    MOBILE UI TOGGLE (long-press / 3-finger tap)
 ========================================================= */
@@ -114,19 +116,12 @@ addEventListener("touchmove", ()=>{
   clearLongPress(); // スクロールし始めたらキャンセル
 }, { passive: true });
 
-addEventListener("touchend", ()=>{
-  clearLongPress();
-}, { passive: true });
-
-addEventListener("touchcancel", ()=>{
-  clearLongPress();
-}, { passive: true });
-
+addEventListener("touchend", ()=>{ clearLongPress(); }, { passive: true });
+addEventListener("touchcancel", ()=>{ clearLongPress(); }, { passive: true });
 
 // 3本指タップでもトグル（アクセシブルな隠しコマンド）
 addEventListener("touchstart", (e)=>{
   if (e.touches && e.touches.length === 3){
-    // 3本指なら即トグル
     const off = !document.body.classList.contains("ui-off");
     UIOff(off, off);
   }
@@ -134,7 +129,7 @@ addEventListener("touchstart", (e)=>{
 
 
 /* =========================================================
-   GHOST TRACE (local only; NOT saved to Supabase)
+   GHOST TRACE (local only; NOT saved to Supabase) ✅fixed setItem
 ========================================================= */
 const GHOST_KEY = "wired_ghost_trace_v1";
 const GHOST_CH  = "wired_ghost_channel_v1";
@@ -146,7 +141,7 @@ function readGhostTrace(){
 }
 
 function writeGhostTrace(list){
-  try{ localStorage.Item(GHOST_KEY, JSON.stringify(list)); }
+  try{ localStorage.setItem(GHOST_KEY, JSON.stringify(list)); }
   catch{}
 }
 
@@ -206,8 +201,17 @@ function injectIntoUI(line){
   Timeout(() => { el.textContent = original; }, 400 + Math.random()*600);
 }
 
+// ✅ safety cap so floating texts never pile up even if something goes wrong
+const MAX_FLOATING_TEXT = 12;
+
 function injectFloatingText(line){
+  const olds = document.querySelectorAll(".wired-float");
+  if (olds.length > MAX_FLOATING_TEXT){
+    for (let i = 0; i < olds.length - MAX_FLOATING_TEXT; i++) olds[i].remove();
+  }
+
   const div = document.createElement("div");
+  div.className = "wired-float";
   div.textContent = line;
 
   div.style.position = "fixed";
@@ -309,7 +313,7 @@ function maybeScramble(intensity){
 }
 
 /* =========================================================
-   glitch / blink / shadow
+   glitch / blink / shadow ✅fixed shadow scheduling
 ========================================================= */
 function glitchPulse(){
   const g = document.querySelector(".glitch-layer");
@@ -361,9 +365,12 @@ let shadowUntil = 0;
 function triggerShadow(){
   if (!shadowImg) return;
 
-  const dur = 420 + Math.random() * 580; // 0.42〜1.0秒
   const now = performance.now();
+  const dur = 420 + Math.random() * 580; // 0.42〜1.0秒
   shadowUntil = now + dur;
+
+  // ✅ important: schedule next shadow properly (prevents rapid fire)
+  nextShadowAt = now + 3800 + Math.random()*4200;
 
   const dx = (Math.random()*28 - 14).toFixed(1);
   const dy = (Math.random()*28 - 14).toFixed(1);
@@ -374,17 +381,16 @@ function triggerShadow(){
 
   shadowImg.style.transform = `translate(${dx}px, ${dy}px) translateZ(0)`;
   shadowImg.classList.add("on");
+
   // 半分くらいの確率でグリッチと同期
   if (Math.random() < 0.55) glitchPulse();
-  setTimeout(()=>{
-     shadowImg?.classList.remove("on");
-   }, 2000);
 
+  // safety remove (in case shadowUntil check is skipped)
+  setTimeout(()=>{ shadowImg?.classList.remove("on"); }, 2000);
 }
 
-
 /* =========================================================
-   audio (wired hiss) - user gesture required
+   audio (wired hiss) - user gesture required ✅fixed AudioParam API
 ========================================================= */
 let audioCtx = null, master = null;
 let noiseSrc = null, noiseGain = null;
@@ -476,12 +482,12 @@ function applyAudioParams(){
   const vol = Number(aVol?.value ?? 26) / 100;
   const tone = Number(aTone?.value ?? 36) / 100;
 
-  master.gain.TargetAtTime(vol * 0.36, audioCtx.currentTime, 0.03);
-  filterLP.frequency.TargetAtTime(900 + tone * 5200, audioCtx.currentTime, 0.05);
-  filterHP.frequency.TargetAtTime(60 + (1-tone) * 140, audioCtx.currentTime, 0.05);
+  master.gain.setTargetAtTime(vol * 0.36, audioCtx.currentTime, 0.03);
+  filterLP.frequency.setTargetAtTime(900 + tone * 5200, audioCtx.currentTime, 0.05);
+  filterHP.frequency.setTargetAtTime(60 + (1-tone) * 140, audioCtx.currentTime, 0.05);
 
-  humGain.gain.TargetAtTime(0.03 + tone * 0.10, audioCtx.currentTime, 0.06);
-  noiseGain.gain.TargetAtTime(0.18 + (1-tone) * 0.22, audioCtx.currentTime, 0.06);
+  humGain.gain.setTargetAtTime(0.03 + tone * 0.10, audioCtx.currentTime, 0.06);
+  noiseGain.gain.setTargetAtTime(0.18 + (1-tone) * 0.22, audioCtx.currentTime, 0.06);
 }
 
 aVol?.addEventListener("input", applyAudioParams);
@@ -596,21 +602,21 @@ function loop(){
         if (Math.random() < 0.45) triggerShadow();
         if (Math.random() < 0.35) glitchPulse();
 
-        // audio wobble + click (safe)
+        // audio wobble + click (safe) ✅fixed setTargetAtTime/setValueAtTime
         if (audioCtx && humOsc && filterLP && noiseGain && master){
           const t0 = audioCtx.currentTime;
 
           humOsc.frequency.cancelScheduledValues(t0);
-          humOsc.frequency.TargetAtTime(40 + Math.random()*90, t0, 0.02);
-          humOsc.frequency.TargetAtTime(50, t0 + 0.18, 0.10);
+          humOsc.frequency.setTargetAtTime(40 + Math.random()*90, t0, 0.02);
+          humOsc.frequency.setTargetAtTime(50, t0 + 0.18, 0.10);
 
           filterLP.frequency.cancelScheduledValues(t0);
-          filterLP.frequency.TargetAtTime(600 + Math.random()*900, t0, 0.03);
-          filterLP.frequency.TargetAtTime(2200, t0 + 0.22, 0.12);
+          filterLP.frequency.setTargetAtTime(600 + Math.random()*900, t0, 0.03);
+          filterLP.frequency.setTargetAtTime(2200, t0 + 0.22, 0.12);
 
           noiseGain.gain.cancelScheduledValues(t0);
-          noiseGain.gain.TargetAtTime(0.32 + Math.random()*0.18, t0, 0.03);
-          noiseGain.gain.TargetAtTime(0.26, t0 + 0.25, 0.12);
+          noiseGain.gain.setTargetAtTime(0.32 + Math.random()*0.18, t0, 0.03);
+          noiseGain.gain.setTargetAtTime(0.26, t0 + 0.25, 0.12);
 
           const click = audioCtx.createOscillator();
           const cg = audioCtx.createGain();
@@ -621,7 +627,7 @@ function loop(){
           cg.connect(master);
 
           click.start(t0);
-          cg.gain.ValueAtTime(0.0, t0);
+          cg.gain.setValueAtTime(0.0, t0);
           cg.gain.linearRampToValueAtTime(0.06, t0 + 0.005);
           cg.gain.linearRampToValueAtTime(0.0, t0 + 0.02);
           click.stop(t0 + 0.03);
@@ -648,20 +654,19 @@ function loop(){
   }
 
   if (running && now2 >= nextShadowAt) triggerShadow();
-  if (shadowImg && performance.now() >= shadowUntil){
-  shadowImg.classList.remove("on");
-}
-
+  if (shadowImg && now2 >= shadowUntil){
+    shadowImg.classList.remove("on");
+  }
 
   // UI scramble
   const power = Math.min(1, inten*0.9 + glitch*0.7 + burst*0.8);
   maybeScramble(power);
 
-  // audio base level
+  // audio base level ✅fixed setTargetAtTime
   if (audioCtx && master){
     const vol = Number(aVol?.value ?? 26) / 100;
     const target = (running ? vol*0.36 : vol*0.14);
-    master.gain.TargetAtTime(target, audioCtx.currentTime, 0.06);
+    master.gain.setTargetAtTime(target, audioCtx.currentTime, 0.06);
   }
 }
 
