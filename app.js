@@ -1,13 +1,20 @@
 
-// BOOT SCREEN
-window.WiredAudio?.bootSound();
-const boot = document.getElementById("boot");
-if (boot){
-  setTimeout(()=>{ boot.classList.add("hidden"); }, 1450);
-}
+
 
 // docs/app.js
 import { supabase } from "./supabase.js";
+
+// BOOT SCREEN (must be after import in module)
+(function bootSequence(){
+  // 音：ユーザー操作前は鳴らないことがあるので安全に
+  window.WiredAudio?.bootSound();
+
+  const boot = document.getElementById("boot");
+  if (boot){
+    setTimeout(()=>{ boot.classList.add("hidden"); }, 1450);
+  }
+})();
+
 
 const $ = (s) => document.querySelector(s);
 const statusEl = $("#status");
@@ -398,6 +405,11 @@ async function onSession(session){
 
 btnSignup?.addEventListener("click", signup);
 btnLogin?.addEventListener("click", ()=>{ window.WiredAudio?.resumeAudio(); login(); });
+btnLogin?.addEventListener("click", ()=>{ 
+  window.WiredAudio?.resumeAudio();
+  window.WiredAudio?.bootSound();
+  login();
+});
 btnLogout?.addEventListener("click", logout);
 
 btnRefresh?.addEventListener("click", async ()=>{
