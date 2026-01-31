@@ -570,3 +570,70 @@ textarea{
       rgba(0,160,255,.12)
     );
 }
+/* =========================================================
+   WIRED BLUE PALETTE OVERRIDE (drop-in)
+   ========================================================= */
+
+/* 青〜シアン基調（枠/光/文字のトーン） */
+:root{
+  --wired-accent: rgba(80, 160, 255, 0.28);   /* 枠 */
+  --wired-accent2: rgba(80, 160, 255, 0.14);  /* 薄枠 */
+  --wired-glow: rgba(80, 160, 255, 0.10);     /* ぼかし光 */
+  --wired-text: rgba(210, 230, 255, 0.86);    /* 文字 */
+}
+
+/* まず“緑っぽい枠線”を青へ寄せる（広域上書き） */
+.panel,
+.pill,
+.item,
+.auth label,
+.filters label,
+.editor-inner label,
+.ghostbox,
+.ghost-item{
+  border-color: var(--wired-accent2) !important;
+  box-shadow: 0 0 18px var(--wired-glow) !important;
+}
+
+/* ゴースト系（TRACE） */
+.ghostbox{
+  border: 1px solid var(--wired-accent2) !important;
+  background: rgba(0,0,0,.18);
+}
+
+.ghost-title{
+  opacity:.78;
+}
+
+.ghost-item{
+  border: 1px solid var(--wired-accent2) !important;
+  color: var(--wired-text) !important;
+}
+
+.ghost-meta{
+  opacity:.58;
+}
+
+/* バッジや小物も青寄りに */
+.badge{
+  border-color: var(--wired-accent2) !important;
+  color: rgba(200, 225, 255, 0.82) !important;
+}
+
+/* UIの細い線（区切り）も青に */
+.topbar,
+.footer{
+  border-color: rgba(80,160,255,0.12) !important;
+}
+
+/* rgb-splitの色味も青寄りに */
+.rgb-split{
+  opacity:.09;
+  background:
+    linear-gradient(90deg,
+      rgba(90, 120, 255, .14),
+      transparent 40%,
+      transparent 60%,
+      rgba(80, 220, 255, .12)
+    ) !important;
+}
