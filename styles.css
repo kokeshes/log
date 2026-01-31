@@ -592,3 +592,5 @@ input:focus, select:focus, textarea:focus{
 }
 .boot-sub{ color: rgba(120,255,220,.7); }
 .boot-bar{ border-color: rgba(120,255,220,.22); }
+.hidden { display: none !important; }
+
