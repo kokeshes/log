@@ -432,3 +432,141 @@ body{
   86%{ opacity:.35; transform: translateX(-1.6px); }
   88%{ opacity:.0; }
 }
+/* =========================================================
+   WIRED // monochrome + left panel vertical relation patch
+   append to END of styles.css
+========================================================= */
+
+/* ---- monochrome bias (almost B/W) ---- */
+:root{
+  --mono-ink: rgba(220,255,235,.85);   /* ほんの少し緑 */
+  --mono-dim: rgba(220,255,235,.55);
+  --mono-bg:  #030406;
+}
+
+/* 全体を白黒寄りに（少しだけ緑を残す） */
+html, body{
+  background: var(--mono-bg);
+}
+body{
+  filter: grayscale(.86) contrast(1.12) brightness(.98);
+}
+
+/* 文字の“冷たい発光”を統一 */
+body, .panel, .topbar, .pill, input, textarea, select{
+  color: var(--mono-ink);
+  text-shadow: 0 0 10px rgba(200,255,220,.10);
+}
+
+/* アクセント色を抑えて“モノクロUI”へ */
+.pill{
+  border-color: rgba(220,255,235,.22);
+  background: rgba(0,0,0,.22);
+}
+.pill.ghost{
+  background: rgba(0,0,0,.12);
+}
+
+/* パネル：黒く、硬く */
+.panel{
+  background: rgba(0,0,0,.30);
+  border-color: rgba(220,255,235,.16);
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,.55) inset,
+    0 18px 54px rgba(0,0,0,.55);
+}
+
+/* scanlines強め（白黒ブラウン管感） */
+.scanlines{
+  opacity:.46 !important;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255,255,255,.10) 0px,
+    rgba(255,255,255,.03) 1px,
+    rgba(0,0,0,0) 3px,
+    rgba(0,0,0,0) 6px
+  ) !important;
+}
+.vignette{ opacity:.55 !important; }
+.dither{ opacity:.12 !important; }
+
+/* ---- WIRED GIRL を “上に大きく” 見せる ---- */
+.lain{
+  margin-top: 14px;
+  border: 1px solid rgba(220,255,235,.14);
+  background: rgba(0,0,0,.18);
+}
+#lainImg{
+  display:block;
+  width: 100%;
+  height: auto;
+  opacity: .92;
+  filter: grayscale(.35) contrast(1.08);
+}
+
+/* ---- TRACE box を “箱感” 強め ---- */
+.ghostbox{
+  margin-top: 12px;
+  border: 1px solid rgba(220,255,235,.18);
+  background: rgba(0,0,0,.24);
+}
+.ghost-title{
+  letter-spacing: .16em;
+  color: var(--mono-ink);
+}
+.ghost-list{
+  max-height: 210px;
+  overflow: auto;
+}
+
+/* =========================================================
+   “半画面くらい” のときの縦関係
+   - 左パネル内で WIRED GIRL を上、TRACEをその下に
+   - 画像を大きめにして縦の関係が見えるように
+========================================================= */
+
+/* 目安：ブラウザ幅が ~900px 以下（半画面っぽい） */
+@media (max-width: 920px){
+  /* 左パネル内を縦に “見せたい順” で固定 */
+  .panel.left #navBox{
+    display:flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* 画像ブロックを上に目立たせる */
+  .panel.left .lain{
+    order: 3; /* who/filtersの後、TRACEより前に置きたいなら 3 */
+  }
+  .panel.left #ghostBox{
+    order: 4;
+  }
+
+  /* 画像を “大きめ” に */
+  #lainImg{
+    max-height: 320px;
+    object-fit: cover;
+    object-position: center top;
+  }
+
+  /* TRACE箱も“箱に入ってる感” */
+  .ghostbox{
+    padding: 10px;
+  }
+}
+
+/* さらに狭い場合は、画像をもう少し“縦に” */
+@media (max-width: 520px){
+  #lainImg{
+    max-height: 260px;
+  }
+  .ghost-list{
+    max-height: 170px;
+  }
+}
+
+/* ---- tear 用（ps1.js が --tear を触る） ---- */
+:root{ --tear: 0px; }
+.shell, .topbar, .footer{
+  transform: translateX(var(--tear));
+}
