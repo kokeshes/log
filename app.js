@@ -266,7 +266,7 @@ async function saveCurrent(){
   if (!currentUser || !selected) return;
   setStatus("SAVE…");
 
-  // いまの種別（UI上の）を保持したい
+  // いまの種別（UI上の）を保持
   const keepKindUI = $("#kind").value;
 
   const rawKind = $("#kind").value;
@@ -281,6 +281,51 @@ async function saveCurrent(){
     mood: $("#mood").value === "" ? null : Number($("#mood").value),
     user_id: currentUser.id,
   };
+
+  if (!selected.id){
+    const { error } = await supabase
+      .from("logs")
+      .insert(payload);
+
+    if (error){
+      window.WiredAudio?.errorSound();
+      setStatus("ERR: " + error.message);
+      return;
+    }
+
+    window.WiredAudio?.saveSound();
+    window.WiredAudio?.applyMood(payload.mood);
+    setStatus("SAVED (NEW).");
+    glitchPulse();
+
+    await fetchLogs();
+
+    window.WiredAudio?.applyMood(0);
+    newEditor(keepKindUI);
+    return;
+  }
+
+  const { error } = await supabase
+    .from("logs")
+    .update(payload)
+    .eq("id", selected.id);
+
+  if (error){
+    window.WiredAudio?.errorSound();
+    setStatus("ERR: " + error.message);
+    return;
+  }
+
+  window.WiredAudio?.saveSound();
+  window.WiredAudio?.applyMood(payload.mood);
+  setStatus("SAVED (UPDATE).");
+  glitchPulse();
+
+  await fetchLogs();
+
+  window.WiredAudio?.applyMood(0);
+  newEditor(keepKindUI);
+}
 
   // INSERT
   if (!selected.id){
@@ -336,46 +381,6 @@ async function saveCurrent(){
   newEditor(keepKindUI);
 }
 
-
-  if (!selected.id){
-    const { data, error } = await supabase.from("logs").insert(payload).select("*").single();
-    if (error){ window.WiredAudio?.errorSound();
-    setStatus("ERR: " + error.message); return; }
-    window.WiredAudio?.saveSound();
-    window.WiredAudio?.applyMood(payload.mood);
-    setStatus("SAVED (NEW).");
-    window.WiredAudio?.applyMood(0);
-    // ---- reset for next log ----
-    currentId = null;
-    editorEl.reset();
-    $("#mood").value = "0";
-    setStatus("READY // NEW LOG");
-    glitchPulse();
-    await fetchLogs();
-    openEditor(data);
-  } else {
-    const { data, error } = await supabase
-      .from("logs")
-      .update(payload)
-      .eq("id", selected.id)
-      .select("*")
-      .single();
-    if (error){ window.WiredAudio?.errorSound();
-    setStatus("ERR: " + error.message); return; }
-    window.WiredAudio?.saveSound();
-    window.WiredAudio?.applyMood(payload.mood);
-    setStatus("SAVED (UPDATE).");
-    // ---- reset for next log ----
-    currentId = null;
-    editorEl.reset();
-    $("#mood").value = "0";
-    setStatus("READY // NEW LOG");
-    glitchPulse();
-    await fetchLogs();
-    openEditor(data);
-  }
-}
-
 async function deleteCurrent(){
   if (!currentUser || !selected?.id) return;
   if (!confirm("DELETE THIS LOG?")) return;
@@ -404,7 +409,7 @@ async function onSession(session){
 }
 
 btnSignup?.addEventListener("click", signup);
-btnLogin?.addEventListener("click", ()=>{ window.WiredAudio?.resumeAudio(); login(); });
+
 btnLogin?.addEventListener("click", ()=>{ 
   window.WiredAudio?.resumeAudio();
   window.WiredAudio?.bootSound();
