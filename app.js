@@ -42,9 +42,40 @@ function getAction(){
   return u.searchParams.get("action");
 }
 
+/* ========= iOS/PWA audio resilience =========
+   - other video/apps can steal audio session
+   - so: try reconnect on gesture + on visibilitychange
+*/
+let audioPrimed = false;
+
+async function tryReconnectAudio(){
+  try{
+    if (window.WiredAudio?.reconnect){
+      await window.WiredAudio.reconnect();
+    }else{
+      // 互換：旧APIがある場合
+      await window.WiredAudio?.resumeAudio?.();
+    }
+  }catch{}
+}
+
+// 画面どこでも “触ったら” 音復旧（iOSで最強）
+["pointerdown","touchstart"].forEach(ev=>{
+  window.addEventListener(ev, ()=>{
+    if (!audioPrimed) return;
+    tryReconnectAudio();
+  }, { passive:true });
+});
+
+// 復帰時にも復旧（他動画→戻る等）
+document.addEventListener("visibilitychange", ()=>{
+  if (document.visibilityState === "visible" && audioPrimed){
+    tryReconnectAudio();
+  }
+});
+
 /* ========= BOOT overlay (module-safe) ========= */
 (function bootSequence(){
-  // iOSはユーザー操作前の音が鳴らないので、安全に呼ぶだけ
   window.WiredAudio?.bootSound?.();
   const boot = document.getElementById("boot");
   if (boot){
@@ -138,9 +169,7 @@ let cache = [];
 // PWA installed only "Hidden" kind (UI上のみ)
 const INSTALLED_ONLY_KIND = "Hidden";
 
-/* ========= DRAFT (local only) =========
-   放置・リロード・セッション切れでも本文を守る
-*/
+/* ========= DRAFT (local only) ========= */
 const DRAFT_PREFIX = "wired_draft_v1"; // + user_id or "anon"
 let draftTimer = null;
 let suppressDraftWrite = false;
@@ -151,18 +180,13 @@ function draftKey(){
 }
 
 function readDraft(){
-  try{
-    return JSON.parse(localStorage.getItem(draftKey()) || "null");
-  }catch{
-    return null;
-  }
+  try{ return JSON.parse(localStorage.getItem(draftKey()) || "null"); }
+  catch{ return null; }
 }
 
 function writeDraft(obj){
   if (suppressDraftWrite) return;
-  try{
-    localStorage.setItem(draftKey(), JSON.stringify(obj));
-  }catch{}
+  try{ localStorage.setItem(draftKey(), JSON.stringify(obj)); }catch{}
 }
 
 function clearDraft(){
@@ -170,7 +194,6 @@ function clearDraft(){
 }
 
 function collectEditorValues(){
-  // editorが未生成ならnull
   const kindEl = $("#kind");
   const titleEl = $("#title");
   const tagsEl = $("#tags");
@@ -181,7 +204,6 @@ function collectEditorValues(){
   return {
     v: 1,
     at: new Date().toISOString(),
-    // ここはUI上のkind（Hidden含む）
     kindUI: kindEl.value ?? "Note",
     title: (titleEl.value ?? ""),
     tags: (tagsEl.value ?? ""),
@@ -196,30 +218,23 @@ function scheduleDraftSave(){
   draftTimer = setTimeout(()=>{
     const snap = collectEditorValues();
     if (!snap) return;
-    // 空なら書かない（ノイズ抑制）
     const empty = !snap.title.trim() && !snap.tags.trim() && !String(snap.mood).trim() && !snap.body.trim();
     if (empty) return;
     writeDraft(snap);
-    // ステータスはうるさくしない：たまにだけ
-    // setStatus("DRAFT SAVED");
   }, 700);
 }
 
 function applyDraftIfAny(kindPreference = null){
   const d = readDraft();
   if (!d) return false;
-
-  // editorがまだ無い場合は無理しない
   if (!$("#kind") || !$("#title") || !$("#tags") || !$("#mood") || !$("#body")) return false;
 
-  // kindPreference があればそれを優先、なければ draft
   $("#kind").value  = (kindPreference ?? d.kindUI ?? $("#kind").value);
   $("#title").value = d.title ?? "";
   $("#tags").value  = d.tags ?? "";
   $("#mood").value  = d.mood ?? "";
   $("#body").value  = d.body ?? "";
 
-  // 表示だけ軽く
   setStatus("DRAFT RESTORED // OBSERVE");
   return true;
 }
@@ -334,7 +349,6 @@ function filtered(){
   const q = (qEl?.value ?? "").trim().toLowerCase();
 
   return cache.filter(it=>{
-    // HiddenはDB上 kind="Other"+tag "hidden"
     if (kind === INSTALLED_ONLY_KIND){
       return it.kind === "Other" && (it.tags||[]).includes("hidden");
     }
@@ -403,7 +417,6 @@ async function fetchLogs(){
 
 /* ========= editor ========= */
 function mapHiddenKind(kindUI, tags){
-  // UI上 "Hidden" をDB上 "Other"+"hidden" に落とす
   if (kindUI === INSTALLED_ONLY_KIND){
     const t = Array.isArray(tags) ? tags.slice() : [];
     if (!t.includes("hidden")) t.unshift("hidden");
@@ -417,7 +430,6 @@ function openEditor(it){
 
   if (!editorEl || !editorTpl) return;
 
-  // 一旦draft書き込み停止（セット中にスパムしない）
   suppressDraftWrite = true;
 
   editorEl.innerHTML = "";
@@ -425,7 +437,6 @@ function openEditor(it){
 
   const isHidden = isStandalone() && (it.kind === "Other") && (it.tags||[]).includes("hidden");
 
-  // KIND option injection
   const kindSel = $("#kind");
   if (isStandalone() && kindSel && !Array.from(kindSel.options).some(o=>o.value===INSTALLED_ONLY_KIND)){
     const opt = document.createElement("option");
@@ -450,22 +461,17 @@ function openEditor(it){
   $("#btnSave").onclick = saveCurrent;
   $("#btnDelete").onclick = deleteCurrent;
 
-  // 下書き：新規（id=null）の時だけ復元を試す
   if (!it.id){
     applyDraftIfAny(kindSel?.value ?? null);
   }
 
-  // editor入力を監視して下書き
-  const bindDraft = (el)=>{
-    el?.addEventListener("input", scheduleDraftSave);
-  };
+  const bindDraft = (el)=> el?.addEventListener("input", scheduleDraftSave);
   bindDraft($("#kind"));
   bindDraft($("#title"));
   bindDraft($("#tags"));
   bindDraft($("#mood"));
   bindDraft($("#body"));
 
-  // focus for fast writing
   $("#body")?.focus();
 
   suppressDraftWrite = false;
@@ -490,10 +496,9 @@ function newEditor(kindOverride = null){
   });
 }
 
-/* ========= SAVE behavior: save -> immediate clear -> next log (keep kind) ========= */
+/* ========= SAVE behavior ========= */
 async function saveCurrent(){
   try{
-    // セッション確認（放置復帰対策）
     const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
 
     if (sessionErr){
@@ -539,7 +544,6 @@ async function saveCurrent(){
       user_id: currentUser.id,
     };
 
-    // INSERT
     if (!selected.id){
       const { error } = await supabase.from("logs").insert(payload);
 
@@ -549,7 +553,6 @@ async function saveCurrent(){
         return;
       }
 
-      // ✅ 保存できたら下書きは消す
       clearDraft();
 
       window.WiredAudio?.saveSound?.();
@@ -565,7 +568,6 @@ async function saveCurrent(){
       return;
     }
 
-    // UPDATE（編集保存した場合は下書きを消さない：新規用のdraftだから）
     const { error } = await supabase
       .from("logs")
       .update(payload)
@@ -584,7 +586,6 @@ async function saveCurrent(){
 
     await fetchLogs();
 
-    // 更新でも “次を書く” 挙動に倒す
     window.WiredAudio?.applyMood?.(0);
     newEditor(keepKindUI);
     setStatus("READY // NEXT LOG");
@@ -634,8 +635,11 @@ async function onSession(session){
 /* ========= events ========= */
 btnSignup?.addEventListener("click", signup);
 
-btnLogin?.addEventListener("click", ()=>{
-  window.WiredAudio?.resumeAudio?.();
+btnLogin?.addEventListener("click", async ()=>{
+  // ✅ ここで「音を使う意思」を確定させる（iOS対策）
+  audioPrimed = true;
+  await tryReconnectAudio();
+
   window.WiredAudio?.bootSound?.();
   login();
 });
@@ -649,7 +653,6 @@ btnRefresh?.addEventListener("click", async ()=>{
 
 btnNew?.addEventListener("click", ()=>{
   glitchPulse();
-  // 現在のkindを維持して次ログへ
   newEditor($("#kind")?.value ?? null);
   setStatus("READY // NEW LOG");
 });
@@ -657,12 +660,10 @@ btnNew?.addEventListener("click", ()=>{
 kindFilterEl?.addEventListener("change", ()=> renderList(filtered()));
 qEl?.addEventListener("input", ()=> renderList(filtered()));
 
-// Live noise intensity based on typing (他の演出で使う用)
 document.addEventListener("input", ()=>{
   window.__noiseBoost = Math.min(1, (window.__noiseBoost || 0) + 0.2);
 });
 
-// 下書き：タブ閉じ/リロード直前にも保存（最後の保険）
 window.addEventListener("beforeunload", ()=>{
   try{
     const snap = collectEditorValues();
@@ -672,10 +673,10 @@ window.addEventListener("beforeunload", ()=>{
   }catch{}
 });
 
-// 放置復帰でセッションを取り直す（iOS/スマホ対策）
 document.addEventListener("visibilitychange", async ()=>{
   if (document.visibilityState === "visible"){
     try{ await supabase.auth.getSession(); }catch{}
+    if (audioPrimed) tryReconnectAudio();
   }
 });
 
@@ -699,8 +700,7 @@ supabase.auth.onAuthStateChange(async (event, session)=>{
   }
 });
 
-// ===== SESSION KEEP-ALIVE (idle-safe) =====
-// ※ ここは“1回だけ”設定する（onAuthStateChangeの外）
+// keep-alive
 setInterval(async ()=>{
   try{ await supabase.auth.getSession(); }catch(e){}
 }, 5 * 60 * 1000);
