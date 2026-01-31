@@ -48,12 +48,12 @@ const UI_KEY = "wired_static_ui_off_v1";
 function hintOnce(){
   if (!uiHint) return;
   uiHint.classList.add("on");
-  setTimeout(()=> uiHint.classList.remove("on"), 650);
+  Timeout(()=> uiHint.classList.remove("on"), 650);
 }
 
-function setUIOff(off, showHint=false){
+function UIOff(off, showHint=false){
   document.body.classList.toggle("ui-off", !!off);
-  try{ localStorage.setItem(UI_KEY, off ? "1" : "0"); }catch{}
+  try{ localStorage.Item(UI_KEY, off ? "1" : "0"); }catch{}
   if (btnUI) btnUI.textContent = off ? "UI: OFF" : "UI: ON";
   if (showHint) hintOnce();
   if (!off) { try{ glitchPulse(); }catch{} }
@@ -64,11 +64,11 @@ function getUIOff(){
 }
 
 // init
-setUIOff(getUIOff(), false);
+UIOff(getUIOff(), false);
 
 btnUI?.addEventListener("click", ()=>{
   const off = !document.body.classList.contains("ui-off");
-  setUIOff(off, off);
+  UIOff(off, off);
 });
 
 // Keyboard: press "u" to toggle UI
@@ -77,7 +77,7 @@ addEventListener("keydown", (e)=>{
   if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
   if (e.key.toLowerCase() === "u"){
     const off = !document.body.classList.contains("ui-off");
-    setUIOff(off, off);
+    UIOff(off, off);
   }
 });
 /* =========================================================
@@ -99,10 +99,10 @@ addEventListener("touchstart", (e)=>{
 
   lpMoved = false;
   clearLongPress();
-  lpTimer = setTimeout(()=>{
+  lpTimer = Timeout(()=>{
     // 長押し成立 → UI切替
     const off = !document.body.classList.contains("ui-off");
-    setUIOff(off, off);   // off時はヒント表示
+    UIOff(off, off);   // off時はヒント表示
     try{ burst = Math.max(burst, 0.25); }catch{}
   }, 650);
 }, { passive: true });
@@ -126,7 +126,7 @@ addEventListener("touchstart", (e)=>{
   if (e.touches && e.touches.length === 3){
     // 3本指なら即トグル
     const off = !document.body.classList.contains("ui-off");
-    setUIOff(off, off);
+    UIOff(off, off);
   }
 }, { passive: true });
 
@@ -144,7 +144,7 @@ function readGhostTrace(){
 }
 
 function writeGhostTrace(list){
-  try{ localStorage.setItem(GHOST_KEY, JSON.stringify(list)); }
+  try{ localStorage.Item(GHOST_KEY, JSON.stringify(list)); }
   catch{}
 }
 
@@ -201,7 +201,7 @@ function injectIntoUI(line){
   const original = el.textContent;
 
   el.textContent = line;
-  setTimeout(() => { el.textContent = original; }, 400 + Math.random()*600);
+  Timeout(() => { el.textContent = original; }, 400 + Math.random()*600);
 }
 
 function injectFloatingText(line){
@@ -227,8 +227,8 @@ function injectFloatingText(line){
     div.style.opacity = "0.9";
   });
 
-  setTimeout(() => { div.style.opacity = "0"; }, 500 + Math.random()*700);
-  setTimeout(() => { div.remove(); }, 1400);
+  Timeout(() => { div.style.opacity = "0"; }, 500 + Math.random()*700);
+  Timeout(() => { div.remove(); }, 1400);
 }
 
 /* =========================================================
@@ -290,7 +290,7 @@ function scrambleOnce(intensity){
     }
     t.el.textContent = out;
   }
-  setTimeout(() => {
+  Timeout(() => {
     for (const t of scrambleTargets) t.el.textContent = t.base;
   }, 90 + Math.random()*140);
 }
@@ -314,7 +314,7 @@ function glitchPulse(){
   if (!g) return;
   g.style.opacity = "1";
   g.style.transform = `translate(${(Math.random()*10-5).toFixed(1)}px, ${(Math.random()*10-5).toFixed(1)}px)`;
-  setTimeout(() => { g.style.opacity = "0"; }, 80 + Math.random()*140);
+  Timeout(() => { g.style.opacity = "0"; }, 80 + Math.random()*140);
 }
 
 let nextBlinkAt = performance.now() + 2200 + Math.random()*2600;
@@ -374,6 +374,10 @@ function triggerShadow(){
   shadowImg.classList.add("on");
   // 半分くらいの確率でグリッチと同期
   if (Math.random() < 0.55) glitchPulse();
+  setTimeout(()=>{
+     shadowImg?.classList.remove("on");
+   }, 2000);
+
 }
 
 
@@ -470,12 +474,12 @@ function applyAudioParams(){
   const vol = Number(aVol?.value ?? 26) / 100;
   const tone = Number(aTone?.value ?? 36) / 100;
 
-  master.gain.setTargetAtTime(vol * 0.36, audioCtx.currentTime, 0.03);
-  filterLP.frequency.setTargetAtTime(900 + tone * 5200, audioCtx.currentTime, 0.05);
-  filterHP.frequency.setTargetAtTime(60 + (1-tone) * 140, audioCtx.currentTime, 0.05);
+  master.gain.TargetAtTime(vol * 0.36, audioCtx.currentTime, 0.03);
+  filterLP.frequency.TargetAtTime(900 + tone * 5200, audioCtx.currentTime, 0.05);
+  filterHP.frequency.TargetAtTime(60 + (1-tone) * 140, audioCtx.currentTime, 0.05);
 
-  humGain.gain.setTargetAtTime(0.03 + tone * 0.10, audioCtx.currentTime, 0.06);
-  noiseGain.gain.setTargetAtTime(0.18 + (1-tone) * 0.22, audioCtx.currentTime, 0.06);
+  humGain.gain.TargetAtTime(0.03 + tone * 0.10, audioCtx.currentTime, 0.06);
+  noiseGain.gain.TargetAtTime(0.18 + (1-tone) * 0.22, audioCtx.currentTime, 0.06);
 }
 
 aVol?.addEventListener("input", applyAudioParams);
@@ -595,16 +599,16 @@ function loop(){
           const t0 = audioCtx.currentTime;
 
           humOsc.frequency.cancelScheduledValues(t0);
-          humOsc.frequency.setTargetAtTime(40 + Math.random()*90, t0, 0.02);
-          humOsc.frequency.setTargetAtTime(50, t0 + 0.18, 0.10);
+          humOsc.frequency.TargetAtTime(40 + Math.random()*90, t0, 0.02);
+          humOsc.frequency.TargetAtTime(50, t0 + 0.18, 0.10);
 
           filterLP.frequency.cancelScheduledValues(t0);
-          filterLP.frequency.setTargetAtTime(600 + Math.random()*900, t0, 0.03);
-          filterLP.frequency.setTargetAtTime(2200, t0 + 0.22, 0.12);
+          filterLP.frequency.TargetAtTime(600 + Math.random()*900, t0, 0.03);
+          filterLP.frequency.TargetAtTime(2200, t0 + 0.22, 0.12);
 
           noiseGain.gain.cancelScheduledValues(t0);
-          noiseGain.gain.setTargetAtTime(0.32 + Math.random()*0.18, t0, 0.03);
-          noiseGain.gain.setTargetAtTime(0.26, t0 + 0.25, 0.12);
+          noiseGain.gain.TargetAtTime(0.32 + Math.random()*0.18, t0, 0.03);
+          noiseGain.gain.TargetAtTime(0.26, t0 + 0.25, 0.12);
 
           const click = audioCtx.createOscillator();
           const cg = audioCtx.createGain();
@@ -615,7 +619,7 @@ function loop(){
           cg.connect(master);
 
           click.start(t0);
-          cg.gain.setValueAtTime(0.0, t0);
+          cg.gain.ValueAtTime(0.0, t0);
           cg.gain.linearRampToValueAtTime(0.06, t0 + 0.005);
           cg.gain.linearRampToValueAtTime(0.0, t0 + 0.02);
           click.stop(t0 + 0.03);
@@ -655,7 +659,7 @@ function loop(){
   if (audioCtx && master){
     const vol = Number(aVol?.value ?? 26) / 100;
     const target = (running ? vol*0.36 : vol*0.14);
-    master.gain.setTargetAtTime(target, audioCtx.currentTime, 0.06);
+    master.gain.TargetAtTime(target, audioCtx.currentTime, 0.06);
   }
 }
 
