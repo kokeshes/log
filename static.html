@@ -9,84 +9,88 @@
   <title>STATIC ROOM // THE WIRED</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
-<body class="static-page">
-
-  <!-- background video (optional) -->
+<body>
+  <!-- BG (optional video) -->
   <video id="bgVideo" class="static-video" autoplay muted loop playsinline preload="auto">
-    <!-- 自前で mp4 を置く場合： ./assets/static.mp4 など -->
+    <!-- 自分で mp4 を置くならここ -->
     <!-- <source src="./assets/static.mp4" type="video/mp4" /> -->
   </video>
 
-  <!-- base -->
-  <div class="static-shell">
-    <canvas id="staticCanvas"></canvas>
-    <canvas id="blinkLayer"></canvas>
+  <!-- base layers -->
+  <canvas id="staticCanvas"></canvas>
+  <canvas id="blinkLayer" aria-hidden="true"></canvas>
 
-    <!-- shadow image (optional) -->
-    <img id="shadowImg" class="shadow-img" src="./assets/lain-shadow.png" alt="" />
+  <!-- optional shadow apparition -->
+  <img id="shadowImg" class="shadow-img" src="./assets/lain-shadow.png" alt="" aria-hidden="true" />
 
-    <!-- overlay -->
-    <div class="static-overlay">
-      <div class="scanlines"></div>
-      <div class="glitch-layer"></div>
-    </div>
+  <!-- overlay vibes -->
+  <div class="static-overlay scanlines" aria-hidden="true"></div>
+  <div class="glitch-layer" aria-hidden="true"></div>
 
-    <!-- diag -->
-    <div class="diagbar">
-      <div id="diag" class="diagtext">BOOT…</div>
-      <div id="audioState" class="diagtext dim">AUDIO: UNKNOWN</div>
-    </div>
+  <!-- diag -->
+  <div id="diag" class="diag">BOOT…</div>
+  <div id="uiHint" class="ui-hint">UI TOGGLED</div>
 
-    <!-- audio lost banner -->
-    <div id="audioLost" class="audio-lost hidden">
-      <div class="audio-lost-title">AUDIO LOST // DISCONNECTED</div>
-      <div class="audio-lost-sub">TAP “RECONNECT” OR TAP SCREEN</div>
-      <button id="btnAudioReset" class="pill danger" data-ui-scramble="1">RECONNECT</button>
-    </div>
-
-    <!-- UI hint -->
-    <div id="uiHint" class="ui-hint" aria-hidden="true">HOLD TO TOGGLE UI</div>
-
-    <!-- UI panel -->
-    <div class="static-ui" id="staticUI">
-      <div class="static-panel">
-        <div class="static-title" data-scramble="1">STATIC ROOM // CONTROL</div>
-        <div class="static-row">
-          <button id="btnToggle" class="pill" data-ui-scramble="1">START</button>
-          <button id="btnBurst"  class="pill" data-ui-scramble="1">BURST</button>
-          <button id="btnCalm"   class="pill" data-ui-scramble="1">CALM</button>
-        </div>
+  <!-- AUDIO GATE (iOS/PWA kill-switch recovery) -->
+  <div id="audioGate" class="audio-gate hidden" role="dialog" aria-modal="true" aria-label="Audio reconnect">
+    <div class="audio-gate-card">
+      <div class="audio-gate-title">AUDIO LOST // TAP TO RECONNECT</div>
+      <div class="audio-gate-sub">
+        iOS/PWA は別の動画/タブ/ロック後に音が停止することがあります。<br />
+        これは仕様です。タップで復帰します。
       </div>
-
-      <div class="static-panel">
-        <div class="static-title" data-scramble="1">VISUAL</div>
-        <div class="static-row">
-          <label data-ui-scramble="1">INTENSITY <input id="vIntensity" type="range" min="0" max="100" value="70"></label>
-        </div>
-        <div class="static-row">
-          <label data-ui-scramble="1">GLITCH <input id="vGlitch" type="range" min="0" max="100" value="38"></label>
-        </div>
+      <div class="audio-gate-actions">
+        <button id="btnAudioReconnect" class="pill danger">RECONNECT</button>
+        <button id="btnAudioDismiss" class="pill">HIDE</button>
       </div>
+      <div id="audioState" class="audio-state">state: n/a</div>
+    </div>
+  </div>
 
-      <div class="static-panel">
-        <div class="static-title" data-scramble="1">AUDIO</div>
-        <div class="static-row">
-          <button id="btnEnable" class="pill" data-ui-scramble="1">ENABLE AUDIO</button>
-          <button id="btnUI" class="pill" data-ui-scramble="1">UI: ON</button>
-        </div>
-        <div class="static-row">
-          <label data-ui-scramble="1">VOLUME <input id="aVol" type="range" min="0" max="100" value="26"></label>
-        </div>
-        <div class="static-row">
-          <label data-ui-scramble="1">TONE <input id="aTone" type="range" min="0" max="100" value="36"></label>
-        </div>
+  <!-- UI -->
+  <div class="static-ui" id="staticUI">
+    <div class="static-panel">
+      <div class="static-title" data-scramble="1">STATIC ROOM</div>
+      <div class="static-row">
+        <span class="badge" data-scramble="1">DIAG</span>
+        <span class="badge" id="audioBadge" data-ui-scramble="1">AUDIO: ?</span>
       </div>
     </div>
 
-    <!-- back link -->
-    <a class="backlink pill" href="./index.html" data-ui-scramble="1">RETURN // LOG</a>
+    <div class="static-panel">
+      <div class="static-title" data-scramble="1">VISUAL</div>
+      <div class="static-row">
+        <label data-ui-scramble="1">INTENSITY <input id="vIntensity" type="range" min="0" max="100" value="70"></label>
+      </div>
+      <div class="static-row">
+        <label data-ui-scramble="1">GLITCH <input id="vGlitch" type="range" min="0" max="100" value="38"></label>
+      </div>
+    </div>
+
+    <div class="static-panel">
+      <div class="static-title" data-scramble="1">CONTROL</div>
+      <div class="static-row">
+        <button id="btnToggle" class="pill" data-ui-scramble="1">START</button>
+        <button id="btnBurst" class="pill" data-ui-scramble="1">BURST</button>
+        <button id="btnCalm" class="pill" data-ui-scramble="1">CALM</button>
+      </div>
+      <div class="static-row">
+        <button id="btnEnable" class="pill" data-ui-scramble="1">AUDIO ON</button>
+        <button id="btnAudioReset" class="pill danger" data-ui-scramble="1">AUDIO RECONNECT</button>
+        <button id="btnUI" class="pill" data-ui-scramble="1">UI: ON</button>
+      </div>
+      <div class="static-row">
+        <label data-ui-scramble="1">VOL <input id="aVol" type="range" min="0" max="100" value="26"></label>
+      </div>
+      <div class="static-row">
+        <label data-ui-scramble="1">TONE <input id="aTone" type="range" min="0" max="100" value="36"></label>
+      </div>
+      <div class="static-row">
+        <a class="pill" href="./index.html" data-ui-scramble="1">BACK</a>
+      </div>
+    </div>
   </div>
 
   <script src="./static.js"></script>
 </body>
-</html
+</html>
