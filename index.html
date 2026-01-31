@@ -7,32 +7,13 @@
   <link rel="manifest" href="./manifest.json" />
   <link rel="apple-touch-icon" href="./assets/icon-192.png" />
   <title>THE WIRED // Y. T.</title>
-
-  <!-- ✅ CRITICAL CSS: bootは必ず出す（styles.cssが壊れても生きる） -->
-  <style>
-    html,body{margin:0;padding:0;background:#05080c;color:#cfe; font-family: ui-monospace, Menlo, Consolas, monospace;}
-    .boot{
-      position:fixed; inset:0; z-index:999999;
-      display:flex; align-items:center; justify-content:center;
-      background: radial-gradient(1200px 700px at 50% 40%, rgba(120,255,180,.07), transparent 60%),
-                  linear-gradient(#05080c, #020406);
-    }
-    .boot.hidden{display:none;}
-    .boot-inner{width:min(560px, 86vw); padding:22px 18px; border:1px solid rgba(140,255,200,.25);
-      background: rgba(0,0,0,.35); box-shadow:0 0 24px rgba(90,255,170,.08);}
-    .boot-title{letter-spacing:.22em; font-size:18px;}
-    .boot-sub{opacity:.88; margin-top:8px; font-size:12px; letter-spacing:.14em;}
-    .boot-bar{height:8px; border:1px solid rgba(140,255,200,.25); margin-top:14px; overflow:hidden;}
-    .boot-fill{height:100%; width:0%; background: rgba(140,255,200,.55); animation:fill 1.35s linear forwards;}
-    @keyframes fill{to{width:100%}}
-    .boot-hint{margin-top:10px; opacity:.78; font-size:12px; letter-spacing:.14em;}
-    .boot-ver{margin-top:10px; opacity:.65; font-size:11px; letter-spacing:.12em;}
-  </style>
-
-  <!-- あなたの本CSS -->
   <link rel="stylesheet" href="./styles.css" />
-</head>
 
+  <!-- ✅ 保険：styles.cssが壊れてもbootだけは必ず表示される -->
+  <style>
+    #boot.boot{display:flex !important;}
+  </style>
+</head>
 <body>
   <div id="boot" class="boot">
     <div class="boot-inner">
@@ -41,12 +22,9 @@
       <div class="boot-sub" style="margin-top:6px;opacity:.9">PRESENT TIME // PRESENT DAY</div>
       <div class="boot-bar"><div class="boot-fill"></div></div>
       <div class="boot-hint">do not panic. observe.</div>
-      <!-- ✅ これが見えれば “このindexが配信されてる” -->
-      <div class="boot-ver">INDEX SAFE BOOT // v2026-01-31A</div>
     </div>
   </div>
 
-  <!-- ここから下は、表示が壊れてても boot は守られる -->
   <div id="offline" class="offline hidden">
     <div class="offline-inner">
       <div class="offline-title">NO CARRIER</div>
@@ -69,7 +47,10 @@
     <div class="top-actions">
       <button id="btnRefresh" class="pill">SYNC</button>
       <a class="pill" href="./static.html">STATIC</a>
-      <button id="btnAudio" class="pill ghost">AUDIO</button>
+
+      <!-- ✅ iOS音死に復帰用（audio.js側で拾う） -->
+      <button id="btnAudio" class="pill ghost" type="button">AUDIO</button>
+
       <button id="btnLogout" class="pill danger hidden">LOGOUT</button>
     </div>
   </header>
@@ -227,35 +208,19 @@
     <div id="status" class="footer-right">BOOTING…</div>
   </footer>
 
-  <div id="audioGate" class="audio-gate hidden" role="dialog" aria-modal="true">
-    <div class="audio-gate-card">
-      <div class="audio-gate-title">AUDIO LOST // TAP TO RECONNECT</div>
-      <div class="audio-gate-sub">
-        iOS/PWA は別の動画・別タブ・ロック復帰後に音が止まることがあります（仕様）。<br/>
-        ここをタップして回線を再同期してください。
-      </div>
-      <div class="audio-gate-actions">
-        <button id="btnAudioReconnect" class="pill danger">RECONNECT</button>
-        <button id="btnAudioReset" class="pill ghost">RESET AUDIO</button>
-        <button id="btnAudioDismiss" class="pill">HIDE</button>
-      </div>
-      <div id="audioState" class="audio-state">state: n/a</div>
-    </div>
-  </div>
-
-  <!-- ✅ bootを必ず消す（JSが生きてる証拠） -->
+  <!-- ✅ “どこかが壊れて boot が永遠に残る” を防ぐ保険（見た目は前と同じ） -->
   <script>
-    // JSが動いていれば、bootは必ず消える。
-    // 消えないなら、そもそもJSが読み込めてない（=配信/パス/キャッシュ問題）
-    setTimeout(()=>{ document.getElementById("boot")?.classList.add("hidden"); }, 1450);
+    setTimeout(()=>{
+      const b = document.getElementById("boot");
+      if (b) b.classList.add("hidden");
+    }, 1800);
   </script>
 
-  <script src="./audio.js"></script>
   <script type="module" src="./app.js"></script>
   <script type="module" src="./noise.js"></script>
   <script type="module" src="./crt.js"></script>
   <script type="module" src="./ps1.js"></script>
-
+  <script src="./audio.js"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js");
