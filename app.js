@@ -575,5 +575,9 @@ supabase.auth.onAuthStateChange(async (event, session)=>{
   if (event === "SIGNED_OUT"){
     setStatus("SIGNED OUT // AUTH REQUIRED");
   }
+  setInterval(async ()=>{
+  await supabase.auth.getSession();
+}, 5 * 60 * 1000); // 5分に1回
+
 });
 
