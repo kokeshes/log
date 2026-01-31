@@ -34,24 +34,29 @@ function escapeHtml(s){
 }
 
 function isAbortError(e){
-  return e?.name === "AbortError" || String(e?.message || "").toLowerCase().includes("aborted");
+  return e?.name === "AbortError"
+    || String(e?.message || "").toLowerCase().includes("aborted");
 }
 
 function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+/* Supabase getter (DO NOT keep as const) */
+function sb(){
+  return getSupabase();
+}
+
+/* ========= PROBE (diagnostic) ========= */
 async function debugProbe(label){
   try{
-    const { data } = await supabase.auth.getSession();
+    const { data, error } = await sb().auth.getSession();
     const has = !!data?.session;
-    console.log(`[PROBE ${label}] session=`, has, data?.session?.user?.email);
+    console.log(`[PROBE ${label}] session=`, has, data?.session?.user?.email, error || "");
+    // status を上書きしすぎるとUX壊れるので短め
     setStatus(`${label} // session=${has ? "YES" : "NO"}`);
   }catch(e){
     console.log(`[PROBE ${label}] ERR`, e);
     setStatus(`${label} // ERR ${e?.name || ""}`);
   }
-}
-/* Supabase getter (DO NOT keep as const) */
-function sb(){
-  return getSupabase();
 }
 
 /* ========= BOOT ========= */
@@ -145,7 +150,6 @@ function writeDraftAll(obj){
 }
 
 function saveDraftNow(){
-  // editor not mounted yet
   const bodyEl = $("#body");
   const titleEl = $("#title");
   const kindEl = $("#kind");
@@ -176,8 +180,6 @@ function applyDraftIfAny(){
   const d = all[draftId()];
   if (!d) return;
 
-  // draft is newer than loaded content? -> apply
-  //（比較をゆるく：bodyが空でない or draftが新しいなら適用）
   const bodyEl = $("#body");
   if (!bodyEl) return;
 
@@ -200,6 +202,10 @@ function hookDraftAutosave(){
   const root = editorEl;
   if (!root) return;
 
+  // 二重登録を避けたい：一度だけ付ける
+  if (root.dataset.draftHooked === "1") return;
+  root.dataset.draftHooked = "1";
+
   root.addEventListener("input", ()=>{
     window.clearTimeout(draftTimer);
     draftTimer = window.setTimeout(()=>saveDraftNow(), 260);
@@ -216,6 +222,7 @@ async function login(){
     });
     if (error) throw error;
 
+    await debugProbe("AFTER LOGIN");
     glitchPulse();
     await onSession(data.session);
   }catch(e){
@@ -245,11 +252,7 @@ async function signup(){
 
 async function logout(){
   setStatus("LOGOUT…");
-  try{
-    await sb().auth.signOut();
-  }catch(e){
-    // ignore
-  }
+  try{ await sb().auth.signOut(); }catch{}
   uiSignedOut();
   setStatus("DISCONNECTED");
   glitchPulse();
@@ -303,10 +306,7 @@ function renderList(items){
 
 /* ========= session keep-alive ========= */
 async function softRefreshSession(){
-  // iOS PWA: 失敗してもUX壊さない
-  try{
-    await sb().auth.refreshSession();
-  }catch(e){}
+  try{ await sb().auth.refreshSession(); }catch{}
 }
 
 async function ensureSessionOrThrow(){
@@ -322,9 +322,9 @@ async function fetchLogs({ retry = 1 } = {}){
   if (!currentUser) return;
 
   setStatus("SYNC…");
+  await debugProbe("BEFORE SYNC");
 
   try{
-    // 放置復帰対策：軽くrefresh（失敗しても続行）
     await softRefreshSession();
 
     const { data, error } = await sb()
@@ -345,7 +345,6 @@ async function fetchLogs({ retry = 1 } = {}){
 
     if (isAbortError(e) && retry > 0){
       setStatus("SYNC ABORTED // RETRY");
-      // いったん Supabase を作り直してからリトライ
       resetSupabase();
       await sleep(320);
       return fetchLogs({ retry: retry - 1 });
@@ -365,16 +364,18 @@ function openEditor(it){
   editorEl.innerHTML = "";
   editorEl.appendChild(editorTpl.content.cloneNode(true));
 
-  $("#kind").value = it.kind ?? "Note";
-  $("#title").value = it.title ?? "";
-  $("#tags").value = (it.tags||[]).join(", ");
-  $("#mood").value = (it.mood ?? "");
-  $("#body").value = it.body ?? "";
+  // draft hook は editorDom 再生成のたびに dataset が消えるので再セットOK
+  editorEl.dataset.draftHooked = "0";
 
-  $("#btnSave").onclick = saveCurrent;
+  $("#kind").value  = it.kind ?? "Note";
+  $("#title").value = it.title ?? "";
+  $("#tags").value  = (it.tags||[]).join(", ");
+  $("#mood").value  = (it.mood ?? "");
+  $("#body").value  = it.body ?? "";
+
+  $("#btnSave").onclick = ()=>saveCurrent({ retry: 1 });
   $("#btnDelete").onclick = deleteCurrent;
 
-  // draft
   hookDraftAutosave();
   applyDraftIfAny();
 
@@ -398,11 +399,9 @@ function newEditor(kind="Note"){
 async function saveCurrent({ retry = 1 } = {}){
   try{
     setStatus("SAVE…");
+    await debugProbe("BEFORE SAVE");
 
-    // 放置復帰対策：refreshを先に（失敗しても続行）
     await softRefreshSession();
-
-    // sessionを確実に持つ（無ければ例外）
     await ensureSessionOrThrow();
 
     if (!selected){
@@ -418,7 +417,6 @@ async function saveCurrent({ retry = 1 } = {}){
       user_id: currentUser.id
     };
 
-    // INSERT / UPDATE
     if (!selected.id){
       const { error } = await sb().from("logs").insert(payload);
       if (error) throw error;
@@ -427,13 +425,11 @@ async function saveCurrent({ retry = 1 } = {}){
       if (error) throw error;
     }
 
-    // 成功：draft消す
     clearDraft();
 
     try{ window.WiredAudio?.saveSound?.(); }catch{}
     await fetchLogs({ retry: 1 });
 
-    // next blank (keep kind)
     newEditor(payload.kind);
     setStatus("READY // NEXT LOG");
     glitchPulse();
@@ -442,7 +438,6 @@ async function saveCurrent({ retry = 1 } = {}){
     console.error(e);
 
     if (isAbortError(e) && retry > 0){
-      // iOS復帰直後に多いので自動リトライ
       setStatus("SAVE ABORTED // RETRY");
       resetSupabase();
       await sleep(320);
@@ -522,21 +517,16 @@ try{
   const { data } = await sb().auth.getSession();
   await onSession(data.session);
 }catch(e){
-  // 初期化で落ちてもUIを出す
   console.error(e);
   uiSignedOut();
   setStatus("AUTH REQUIRED // CONNECT TO WIRED");
 }
 
-/* auth state updates */
 sb().auth.onAuthStateChange((_event, session)=>{
-  // await できないのでチェーン
   onSession(session);
 });
 
-/* keep alive（放置復帰の成功率を上げる） */
+/* keep alive */
 setInterval(async ()=>{
-  try{
-    await sb().auth.getSession();
-  }catch{}
+  try{ await sb().auth.getSession(); }catch{}
 }, 5 * 60 * 1000);
