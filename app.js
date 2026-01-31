@@ -152,42 +152,27 @@ async function logout(){
 /* ========= data ========= */
 async function fetchLogs(){
   if (!currentUser) return;
+
   setStatus("SYNC…");
 
   const { data, error } = await supabase
     .from("logs")
     .select("*")
-    .order("created_at", { ascending:false })
-    .limit(200);
+    .order("created_at", { ascending:false });
 
   if (error){
+    console.error(error);
     setStatus("ERR: " + error.message);
     return;
   }
 
   cache = data || [];
-  renderList(cache);
-  setStatus(`SYNC OK // ${cache.length}`);
-}
+  console.log("LOGS:", cache);
 
-function renderList(items){
-  if (!items.length){
-    listEl.innerHTML =
-      `<div class="empty-msg">NO DATA // CREATE FIRST LOG</div>`;
-    return;
-  }
-  listEl.innerHTML = "";
-  items.forEach(it=>{
-    const div = document.createElement("div");
-    div.className = "item";
-    div.innerHTML = `
-      <div class="k">${escapeHtml(it.kind)}</div>
-      <div class="t">${escapeHtml(it.title||"(no title)")}</div>
-      <div class="m">${escapeHtml((it.body||"").slice(0,120))}</div>
-    `;
-    div.onclick = ()=>openEditor(it);
-    listEl.appendChild(div);
-  });
+  // ★ フィルタなしで必ず表示
+  renderList(cache);
+
+  setStatus(`SYNC OK // ${cache.length} logs`);
 }
 
 /* ========= editor ========= */
