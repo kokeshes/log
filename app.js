@@ -1,6 +1,8 @@
 // docs/app.js
 import { getSupabase, resetSupabase } from "./supabase.js";
-const supabase = getSupabase();
+
+/* ========= supabase (re-creatable) ========= */
+let supabase = getSupabase();
 
 /* ========= helpers ========= */
 const $ = (s) => document.querySelector(s);
@@ -59,9 +61,6 @@ const listEl = $("#list");
 const editorEl = $("#editor");
 const editorTpl = $("#editorTpl");
 
-const kindFilterEl = $("#kindFilter");
-const qEl = $("#q");
-
 /* ========= state ========= */
 let currentUser = null;
 let selected = null;
@@ -111,11 +110,13 @@ async function login(){
     email: emailEl.value.trim(),
     password: passEl.value
   });
+
   if (error){
     setStatus("ERR: " + error.message);
     window.WiredAudio?.errorSound?.();
     return;
   }
+
   glitchPulse();
   await onSession(data.session);
 }
@@ -126,10 +127,12 @@ async function signup(){
     email: emailEl.value.trim(),
     password: passEl.value
   });
+
   if (error){
     setStatus("ERR: " + error.message);
     return;
   }
+
   setStatus("CHECK EMAIL // VERIFY");
 }
 
@@ -168,6 +171,7 @@ function renderList(items){
         ${tags}
       </div>
     `;
+
     div.onclick = ()=>openEditor(it);
     listEl.appendChild(div);
   }
@@ -197,26 +201,16 @@ async function fetchLogs(){
     if (e.name === "AbortError"){
       setStatus("CONNECTION RESET // RETRY");
       resetSupabase();
+      supabase = getSupabase();
 
-      // 1回だけ自動リトライ
-      setTimeout(async ()=>{
-        try{
-          const sb = getSupabase();
-          const { data } = await sb.from("logs").select("*").order("created_at",{ascending:false});
-          cache = data || [];
-          renderList(cache);
-          setStatus(`SYNC OK // ${cache.length} logs`);
-        }catch(err){
-          setStatus("SYNC FAILED // RELOAD");
-        }
-      }, 400);
-
+      setTimeout(fetchLogs, 400);
       return;
     }
 
     setStatus("ERR: " + e.message);
   }
 }
+
 /* ========= editor ========= */
 function openEditor(it){
   selected = it;
@@ -252,14 +246,12 @@ async function saveCurrent(){
   try{
     setStatus("SAVE…");
 
-    // ★ 放置対策：必ず refresh
-    await supabase.auth.refreshSession();
-
     const { data } = await supabase.auth.getSession();
     if (!data.session){
       alert("SESSION EXPIRED // LOGIN AGAIN");
       return;
     }
+
     currentUser = data.session.user;
 
     const payload = {
@@ -287,22 +279,25 @@ async function saveCurrent(){
     newEditor(payload.kind);
     setStatus("READY // NEXT LOG");
 
- }catch(e){
-  console.error(e);
+  }catch(e){
+    console.error(e);
 
-  if (e.name === "AbortError"){
-    setStatus("CONNECTION LOST // RETRY SAVE");
-    resetSupabase();
-    alert(
-      "通信が一時的に切断されました。\n" +
-      "ページを更新せず、もう一度 SAVE を押してください。\n" +
-      "（本文は保持されています）"
-    );
-    return;
+    if (e.name === "AbortError"){
+      setStatus("CONNECTION LOST // RETRY SAVE");
+      resetSupabase();
+      supabase = getSupabase();
+
+      alert(
+        "通信が一時的に切断されました。\n" +
+        "もう一度 SAVE を押してください。\n" +
+        "（本文は保持されています）"
+      );
+      return;
+    }
+
+    setStatus("ERR: SAVE FAILED");
+    alert("SAVE FAILED\n" + e.message);
   }
-
-  setStatus("ERR: SAVE FAILED");
-  alert("SAVE FAILED\n" + e.message);
 }
 
 async function deleteCurrent(){
@@ -320,6 +315,7 @@ async function onSession(session){
     uiSignedOut();
     return;
   }
+
   currentUser = session.user;
   uiSignedIn(currentUser);
   await fetchLogs();
@@ -342,5 +338,7 @@ await onSession(data.session);
 
 supabase.auth.onAuthStateChange((_e, session)=>onSession(session));
 
-// keep alive（軽量）
-setInterval(()=>supabase.auth.getSession(), 5*60*1000);
+// keep alive（軽量・副作用なし）
+setInterval(()=>{
+  try{ supabase.auth.getSession(); }catch{}
+}, 5*60*1000);
