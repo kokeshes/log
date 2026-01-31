@@ -1,5 +1,6 @@
 // docs/app.js
-import { supabase } from "./supabase.js";
+import { getSupabase, resetSupabase } from "./supabase.js";
+const supabase = getSupabase();
 
 /* ========= helpers ========= */
 const $ = (s) => document.querySelector(s);
@@ -178,22 +179,44 @@ async function fetchLogs(){
 
   setStatus("SYNC…");
 
-  const { data, error } = await supabase
-    .from("logs")
-    .select("*")
-    .order("created_at", { ascending:false });
+  try{
+    const { data, error } = await supabase
+      .from("logs")
+      .select("*")
+      .order("created_at", { ascending:false });
 
-  if (error){
-    console.error(error);
-    setStatus("ERR: " + error.message);
-    return;
+    if (error) throw error;
+
+    cache = data || [];
+    renderList(cache);
+    setStatus(`SYNC OK // ${cache.length} logs`);
+
+  }catch(e){
+    console.error(e);
+
+    if (e.name === "AbortError"){
+      setStatus("CONNECTION RESET // RETRY");
+      resetSupabase();
+
+      // 1回だけ自動リトライ
+      setTimeout(async ()=>{
+        try{
+          const sb = getSupabase();
+          const { data } = await sb.from("logs").select("*").order("created_at",{ascending:false});
+          cache = data || [];
+          renderList(cache);
+          setStatus(`SYNC OK // ${cache.length} logs`);
+        }catch(err){
+          setStatus("SYNC FAILED // RELOAD");
+        }
+      }, 400);
+
+      return;
+    }
+
+    setStatus("ERR: " + e.message);
   }
-
-  cache = data || [];
-  renderList(cache);
-  setStatus(`SYNC OK // ${cache.length} logs`);
 }
-
 /* ========= editor ========= */
 function openEditor(it){
   selected = it;
@@ -264,11 +287,22 @@ async function saveCurrent(){
     newEditor(payload.kind);
     setStatus("READY // NEXT LOG");
 
-  }catch(e){
-    console.error(e);
-    setStatus("ERR: SAVE FAILED");
-    alert("SAVE FAILED\n" + e.message);
+ }catch(e){
+  console.error(e);
+
+  if (e.name === "AbortError"){
+    setStatus("CONNECTION LOST // RETRY SAVE");
+    resetSupabase();
+    alert(
+      "通信が一時的に切断されました。\n" +
+      "ページを更新せず、もう一度 SAVE を押してください。\n" +
+      "（本文は保持されています）"
+    );
+    return;
   }
+
+  setStatus("ERR: SAVE FAILED");
+  alert("SAVE FAILED\n" + e.message);
 }
 
 async function deleteCurrent(){
