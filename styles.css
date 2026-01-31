@@ -637,3 +637,92 @@ textarea{
       rgba(80, 220, 255, .12)
     ) !important;
 }
+/* =========================================================
+   DARK VIGNETTE / KERARE OVERRIDE
+   ========================================================= */
+
+/* 画面全体を“少し沈める” */
+body::before{
+  content:"";
+  position: fixed;
+  inset: 0;
+  z-index: 2;               /* noise(=canvas)より上、UIより下にしたいなら後で調整 */
+  pointer-events: none;
+  background: rgba(0,0,0,.18);
+  mix-blend-mode: multiply;
+}
+
+/* ケラレ（四隅が強く落ちる） */
+.vignette{
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  background:
+    radial-gradient(ellipse at center,
+      rgba(0,0,0,0.10) 0%,
+      rgba(0,0,0,0.35) 55%,
+      rgba(0,0,0,0.78) 100%);
+  opacity: 1 !important;
+}
+
+/* さらに“端が黒く締まる”感じを足す（好みで） */
+.vignette::after{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  background:
+    radial-gradient(ellipse at center,
+      rgba(0,0,0,0.0) 0%,
+      rgba(0,0,0,0.35) 68%,
+      rgba(0,0,0,0.92) 100%);
+  filter: blur(0.5px);
+  opacity: .85;
+}
+/* =========================================================
+   BACKGROUND: more dark / semi-transparent / hazy
+   ========================================================= */
+
+/* 背景担当っぽい要素がある場合（.bg / .warp / .dither など） */
+.bg, .warp, .dither{
+  opacity: .32 !important;                /* “半透過感” */
+  filter: grayscale(.15) contrast(1.05) brightness(.55) saturate(.85) blur(1.2px) !important;
+}
+
+/* body背景が直で貼られてる場合も沈める */
+body{
+  background-color: #030508 !important;
+  background-blend-mode: multiply;
+}
+
+/* 画像が強すぎる時用：全体に薄い黒膜 */
+body::after{
+  content:"";
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: rgba(0,0,0,.42);
+  mix-blend-mode: multiply;
+}
+/* =========================================================
+   CENTER OBJECT: shadowy / ambiguous silhouette
+   ========================================================= */
+
+.lain{
+  opacity: .72;
+}
+
+.lain img{
+  opacity: .22 !important;                 /* かなり薄く */
+  filter: grayscale(1) contrast(.85) brightness(.60) blur(1.6px) !important;
+  mix-blend-mode: screen;                  /* 暗い背景で“幽霊っぽく” */
+  transform: translateZ(0);
+}
+
+/* 輪郭を揺らすような“にじみ”を追加 */
+.lain img{
+  box-shadow:
+    0 0 28px rgba(70,140,255,.10),
+    0 0 80px rgba(0,0,0,.35) !important;
+}
