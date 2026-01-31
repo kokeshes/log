@@ -279,6 +279,34 @@ const SCRAMBLE_CHARS =
 
 const scrambleTargets = Array.from(document.querySelectorAll("[data-scramble='1']"))
   .map(el => ({ el, base: el.textContent }));
+// ✅ UI専用スクランブル対象
+const uiScrambleTargets = Array.from(document.querySelectorAll("[data-ui-scramble='1']"))
+  .map(el => ({ el, base: el.textContent }));
+
+function scrambleUI(intensity){
+  if (!uiScrambleTargets.length) return;
+
+  // UIは“軽め”が雰囲気良い（読みやすさ残す）
+  const p = 0.02 + intensity * 0.12;
+  const hold = 120 + Math.random()*260;
+
+  for (const t of uiScrambleTargets){
+    const s = t.base;
+    let out = "";
+    for (let i=0;i<s.length;i++){
+      const ch = s[i];
+      if (ch === " " || ch === "\n" || ch === "\t"){ out += ch; continue; }
+      out += (Math.random() < p)
+        ? SCRAMBLE_CHARS[(Math.random()*SCRAMBLE_CHARS.length)|0]
+        : ch;
+    }
+    t.el.textContent = out;
+  }
+
+  Timeout(() => {
+    for (const t of uiScrambleTargets) t.el.textContent = t.base;
+  }, hold);
+}
 
 let scrambleCooldown = 0;
 
@@ -467,6 +495,18 @@ function ensureAudio(){
   mix.connect(filterHP);
   filterHP.connect(filterLP);
   filterLP.connect(master);
+
+   // ✅ limiter-ish compressor
+   const comp = audioCtx.createDynamicsCompressor();
+   comp.threshold.value = -18;
+   comp.knee.value = 12;
+   comp.ratio.value = 8;
+   comp.attack.value = 0.003;
+   comp.release.value = 0.12;
+
+   master.connect(comp);
+   comp.connect(audioCtx.destination);
+
   master.connect(audioCtx.destination);
 
   noiseSrc.start();
@@ -482,7 +522,7 @@ function applyAudioParams(){
   const vol = Number(aVol?.value ?? 26) / 100;
   const tone = Number(aTone?.value ?? 36) / 100;
 
-  master.gain.setTargetAtTime(vol * 0.36, audioCtx.currentTime, 0.03);
+  master.gain.setTargetAtTime(vol * 0.85, audioCtx.currentTime, 0.03);
   filterLP.frequency.setTargetAtTime(900 + tone * 5200, audioCtx.currentTime, 0.05);
   filterHP.frequency.setTargetAtTime(60 + (1-tone) * 140, audioCtx.currentTime, 0.05);
 
@@ -661,11 +701,13 @@ function loop(){
   // UI scramble
   const power = Math.min(1, inten*0.9 + glitch*0.7 + burst*0.8);
   maybeScramble(power);
+// ✅ UIもたまに壊す（頻度低め）
+if (running && Math.random() < (0.006 + power*0.02)) scrambleUI(power);
 
   // audio base level ✅fixed setTargetAtTime
   if (audioCtx && master){
     const vol = Number(aVol?.value ?? 26) / 100;
-    const target = (running ? vol*0.36 : vol*0.14);
+    const target = (running ? vol*0.85 : vol*0.25);
     master.gain.setTargetAtTime(target, audioCtx.currentTime, 0.06);
   }
 }
