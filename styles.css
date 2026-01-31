@@ -726,3 +726,102 @@ body::after{
     0 0 28px rgba(70,140,255,.10),
     0 0 80px rgba(0,0,0,.35) !important;
 }
+
+/* =========================================================
+   AUTH INPUTS: remove white / make dark, wired-like
+   ========================================================= */
+
+.auth label span,
+.filters label span{
+  color: rgba(200,220,255,.78) !important;
+  letter-spacing: .12em;
+}
+
+.auth input,
+.filters input,
+.filters select,
+.auth select{
+  background: rgba(0,0,0,.52) !important;
+  color: rgba(215,235,255,.92) !important;
+  border: 1px solid rgba(120,170,255,.22) !important;  /* ← 青系 */
+  box-shadow: 0 0 18px rgba(70,140,255,.08) !important;
+  outline: none !important;
+}
+
+.auth input::placeholder,
+.filters input::placeholder{
+  color: rgba(210,230,255,.35) !important;
+}
+
+.auth input:focus,
+.filters input:focus,
+.filters select:focus{
+  border-color: rgba(120,170,255,.42) !important;
+  box-shadow: 0 0 0 2px rgba(80,140,255,.12), 0 0 26px rgba(70,140,255,.14) !important;
+}
+
+/* iOSの勝手な白背景・黄背景対策 */
+input, textarea, select{
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-text-fill-color: rgba(215,235,255,.92);
+  caret-color: rgba(190,230,255,.9);
+}
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus{
+  -webkit-text-fill-color: rgba(215,235,255,.92) !important;
+  transition: background-color 9999s ease-in-out 0s !important;
+  box-shadow: 0 0 0 1000px rgba(0,0,0,.58) inset !important;
+  border: 1px solid rgba(120,170,255,.22) !important;
+}
+
+/* =========================================================
+   + NEW LOG: move to center-ish and keep it readable
+   (ログイン後の navBox 内で効く)
+   ========================================================= */
+
+#navBox .filters{
+  position: relative;
+}
+
+/* 既存のレイアウトを崩しにくい「中央寄せ」 */
+#btnNew{
+  display: block;
+  margin: 14px auto 6px auto !important;   /* 真ん中寄りに */
+  width: min(360px, 92%) !important;
+  text-align: center !important;
+  border-color: rgba(120,170,255,.35) !important;
+  box-shadow: 0 0 26px rgba(70,140,255,.16) !important;
+}
+
+/* “自然に明るい場所”っぽい、淡い光だまり */
+#btnNew::before{
+  content:"";
+  position:absolute;
+  left: 50%;
+  top: 0;
+  transform: translate(-50%, -30%);
+  width: 520px;
+  height: 220px;
+  background: radial-gradient(ellipse at center,
+    rgba(70,140,255,.12) 0%,
+    rgba(70,140,255,.05) 35%,
+    rgba(0,0,0,0) 75%);
+  pointer-events:none;
+  z-index: -1;
+  filter: blur(1px);
+  opacity: .9;
+}
+
+/* CONNECTED周りは“読みやすい程度に”暗い中で浮かせる */
+#navBox .who{
+  background: rgba(0,0,0,.28) !important;
+  border: 1px solid rgba(120,170,255,.10) !important;
+  box-shadow: 0 0 18px rgba(70,140,255,.06) !important;
+}
+
+/* もしケラレが強すぎて左カラムが暗すぎる時の救済 */
+.panel.left{
+  filter: none !important;
+}
