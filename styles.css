@@ -417,3 +417,18 @@ body{
 
 /* ほんの少しだけ“汚れ” */
 .dither{ opacity:.10 !important; }
+.rgb-split{
+  position:fixed; inset:0; z-index:2; pointer-events:none;
+  background:
+    linear-gradient(90deg, rgba(255,0,80,.10), transparent 35%),
+    linear-gradient(90deg, transparent 65%, rgba(0,255,180,.10));
+  mix-blend-mode: screen;
+  opacity:.0;
+  animation: rgbSplit 2.6s infinite;
+}
+@keyframes rgbSplit{
+  0%,82%,100%{ opacity:0; transform:none; }
+  84%{ opacity:.55; transform: translateX(1.2px); }
+  86%{ opacity:.35; transform: translateX(-1.6px); }
+  88%{ opacity:.0; }
+}
