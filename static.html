@@ -76,9 +76,12 @@
       font-size: 11px;
       opacity: .9;
       max-width: calc(100% - 24px);
+      white-space: nowrap;
+      overflow:hidden;
+      text-overflow: ellipsis;
     }
 
-    /* Scramble targets (injectIntoUI uses these) */
+    /* Scramble targets */
     .scramble-zone{
       position: fixed;
       right: 12px;
@@ -127,9 +130,14 @@
       backdrop-filter: blur(6px);
       box-shadow: 0 0 18px rgba(80,255,160,.08);
     }
-    .static-title{
+
+    /* ✅ Mark UI text nodes as scramble targets */
+    .wired-scramble{
       font-family: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
       letter-spacing: .10em;
+    }
+
+    .static-title{
       font-size: 12px;
       opacity: .9;
       margin-bottom: 6px;
@@ -191,19 +199,26 @@
     .static-overlay, .scanlines, .vignette, .dither, .warp, .glitch-layer{
       pointer-events: none !important;
     }
+
+    /* ✅ Optional: when text is scrambled, keep UI layout stable */
+    [data-ui-scramble="1"]{
+      display: inline-block;
+      max-width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   </style>
 </head>
 
 <body class="static-shell">
   <!-- optional background video -->
   <video id="bgVideo" class="static-video" autoplay muted loop playsinline>
-    <!-- MP4は任意。無くても動く。用意するなら assets/static.mp4 として置く -->
     <!-- <source src="./assets/static.mp4" type="video/mp4" /> -->
   </video>
 
   <canvas id="staticCanvas" class="static-stage"></canvas>
   <canvas id="blinkLayer"></canvas>
-　<img id="shadowImg" src="./assets/lain-shadow.png" alt="" />
 
   <!-- overlays -->
   <div class="static-overlay scanlines"></div>
@@ -212,16 +227,16 @@
   <div class="static-overlay warp"></div>
   <div class="glitch-layer" aria-hidden="true"></div>
 
-  <!-- shadow image -->
+  <!-- shadow image (✅ only once) -->
   <img id="shadowImg" src="./assets/lain-shadow.png" alt="" />
 
-  <!-- diag -->
-  <div id="diag">LOADING JS...</div>
+  <!-- diag (✅ also eligible for UI scramble, but keep it separate from data-scramble pills) -->
+  <div id="diag" class="wired-scramble" data-ui-scramble="1">LOADING JS...</div>
 
   <!-- hint -->
-  <div id="uiHint">observe // press U</div>
+  <div id="uiHint" class="wired-scramble" data-ui-scramble="1">observe // press U</div>
 
-  <!-- scramble targets -->
+  <!-- scramble targets (injectIntoUI uses data-scramble="1") -->
   <div class="scramble-zone" aria-hidden="true">
     <div class="scramble-pill" data-scramble="1">PRESENT TIME. PRESENT DAY.</div>
     <div class="scramble-pill" data-scramble="1">YOU ARE CONNECTED.</div>
@@ -229,59 +244,79 @@
     <div class="scramble-pill" data-scramble="1">THE WIRED IS ALWAYS LISTENING.</div>
   </div>
 
-  <!-- UI -->
+  <!-- UI (✅ add data-ui-scramble="1" to text nodes you want scrambled by JS rules) -->
   <div class="static-ui">
     <div class="static-panel">
-      <div class="static-title">VISUAL / CONTROL</div>
+      <div class="static-title wired-scramble" data-ui-scramble="1">VISUAL / CONTROL</div>
+
       <div class="static-row">
-        <button id="btnToggle" class="pill">START</button>
-        <button id="btnBurst" class="pill ghost">BURST</button>
-        <button id="btnCalm" class="pill ghost">CALM</button>
+        <!-- ✅ Keep button IDs intact. Add data-ui-scramble on the button text itself (button content). -->
+        <button id="btnToggle" class="pill wired-scramble" data-ui-scramble="1">START</button>
+        <button id="btnBurst" class="pill ghost wired-scramble" data-ui-scramble="1">BURST</button>
+        <button id="btnCalm" class="pill ghost wired-scramble" data-ui-scramble="1">CALM</button>
       </div>
+
       <div class="static-row" style="margin-top:8px;">
-        <label>INTENSITY
+        <!-- ✅ Scramble label text, but keep the range input untouched -->
+        <label class="wired-scramble">
+          <span data-ui-scramble="1">INTENSITY</span>
           <input id="vIntensity" type="range" min="0" max="100" value="70" />
         </label>
       </div>
+
       <div class="static-row" style="margin-top:6px;">
-        <label>GLITCH
+        <label class="wired-scramble">
+          <span data-ui-scramble="1">GLITCH</span>
           <input id="vGlitch" type="range" min="0" max="100" value="38" />
         </label>
       </div>
     </div>
 
     <div class="static-panel">
-      <div class="static-title">AUDIO / WIRED HISS</div>
+      <div class="static-title wired-scramble" data-ui-scramble="1">AUDIO / WIRED HISS</div>
+
       <div class="static-row">
-        <button id="btnEnable" class="pill">ENABLE AUDIO</button>
-        <button id="btnUI" class="pill ghost">UI: ON</button>
+        <button id="btnEnable" class="pill wired-scramble" data-ui-scramble="1">ENABLE AUDIO</button>
+        <button id="btnUI" class="pill ghost wired-scramble" data-ui-scramble="1">UI: ON</button>
       </div>
+
       <div class="static-row" style="margin-top:8px;">
-        <label>VOLUME
+        <label class="wired-scramble">
+          <span data-ui-scramble="1">VOLUME</span>
           <input id="aVol" type="range" min="0" max="100" value="26" />
         </label>
       </div>
+
       <div class="static-row" style="margin-top:6px;">
-        <label>TONE
+        <label class="wired-scramble">
+          <span data-ui-scramble="1">TONE</span>
           <input id="aTone" type="range" min="0" max="100" value="36" />
         </label>
       </div>
     </div>
 
     <div class="static-panel">
-      <div class="static-title">NAV</div>
+      <div class="static-title wired-scramble" data-ui-scramble="1">NAV</div>
+
       <div class="static-row">
-        <a class="pill ghost" href="./index.html">BACK</a>
-        <button class="pill ghost" onclick="location.reload()">RELOAD</button>
-        <span style="opacity:.7; font-size:11px; letter-spacing:.12em; font-family: ui-monospace, Menlo, Consolas, monospace;">U: UI toggle</span>
+        <!-- ✅ Anchor text can be scrambled too -->
+        <a class="pill ghost wired-scramble" href="./index.html" data-ui-scramble="1">BACK</a>
+        <button class="pill ghost wired-scramble" data-ui-scramble="1" onclick="location.reload()">RELOAD</button>
+
+        <span class="wired-scramble" style="opacity:.7; font-size:11px; letter-spacing:.12em;" data-ui-scramble="1">
+          U: UI toggle
+        </span>
       </div>
-      <div class="static-row" style="margin-top:8px; opacity:.85; font-size:12px; letter-spacing:.08em; font-family: ui-monospace, Menlo, Consolas, monospace;">
-        Tip: START -> text. LOG　-> TRACE。
+
+      <div class="static-row wired-scramble" style="margin-top:8px; opacity:.85; font-size:12px; letter-spacing:.08em;">
+        <span data-ui-scramble="1">Tip: START -> text. LOG -> TRACE.</span>
       </div>
     </div>
   </div>
 
+  <!-- ✅ static.js MUST include UI scramble support:
+       It should query [data-ui-scramble="1"] and scramble them (recommended in earlier snippet).
+       If you haven't added that yet, tell me and I'll paste the static.js diff or full file again. -->
   <script type="module" src="./static.js"></script>
 </body>
 </html>
-
