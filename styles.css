@@ -1,827 +1,233 @@
 /* =========================================================
-   THE WIRED // LOG UI (restore look like screenshot)
+   THE WIRED — OFFICIAL STYLE SHEET (BLUE / DARK RESTORE)
+   Full replace version
    ========================================================= */
 
-/* ----- reset ----- */
-*{ box-sizing:border-box; }
-html,body{ height:100%; }
-body{
+/* ===== RESET ===== */
+*,
+*::before,
+*::after{
+  box-sizing:border-box;
+}
+
+html,body{
   margin:0;
-  background:#05080c;
-  color:rgba(210,245,235,.92);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
-  overflow-x:hidden;
-}
-
-/* ----- theme vars ----- */
-:root{
-  --bg0:#05080c;
-  --bg1:#070d12;
-  --line: rgba(120,255,170,.18);
-  --line2: rgba(120,255,170,.10);
-  --txt: rgba(210,245,235,.92);
-  --muted: rgba(190,235,225,.62);
-  --muted2: rgba(190,235,225,.42);
-  --glow: rgba(80,255,160,.10);
-  --glow2: rgba(80,255,160,.06);
-  --danger: rgba(255,90,120,.85);
-  --radius: 16px;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-}
-
-/* ----- background layers (optional, safe) ----- */
-#noise{
-  position:fixed;
-  inset:0;
-  z-index:0;
+  padding:0;
   width:100%;
   height:100%;
-  pointer-events:none;
-  opacity:.12;
-}
-.scanlines{
-  position:fixed;
-  inset:0;
-  z-index:1;
-  pointer-events:none;
-  opacity:.20;
-  background: repeating-linear-gradient(
-    to bottom,
-    rgba(255,255,255,.02) 0px,
-    rgba(255,255,255,.02) 1px,
-    rgba(0,0,0,0) 3px,
-    rgba(0,0,0,0) 4px
-  );
-}
-.vignette{
-  position:fixed;
-  inset:0;
-  z-index:2;
-  pointer-events:none;
-  background: radial-gradient(ellipse at center,
-    rgba(0,0,0,0) 0%,
-    rgba(0,0,0,.35) 55%,
-    rgba(0,0,0,.72) 100%
-  );
-}
-.dither{
-  position:fixed;
-  inset:0;
-  z-index:3;
-  pointer-events:none;
-  opacity:.10;
-  background-image:
-    radial-gradient(rgba(255,255,255,.06) 1px, transparent 1px);
-  background-size: 3px 3px;
-  mix-blend-mode: overlay;
-}
-.warp{
-  position:fixed;
-  inset:-20px;
-  z-index:4;
-  pointer-events:none;
-  opacity:.10;
-  background: radial-gradient(circle at 30% 20%, rgba(120,255,170,.10), transparent 50%),
-              radial-gradient(circle at 70% 80%, rgba(120,255,170,.08), transparent 55%);
-  filter: blur(10px);
-}
-.glitch-layer{
-  position:fixed;
-  inset:0;
-  z-index:5;
-  pointer-events:none;
-  opacity:0;
-  background: linear-gradient(90deg, rgba(120,255,170,.08), rgba(120,200,255,.06), rgba(255,120,200,.05));
-  mix-blend-mode: screen;
-  filter: blur(1px);
+  background:#02040a;
+  color:rgba(210,225,255,.88);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow:hidden;
 }
 
-/* ----- boot & offline overlays (if present) ----- */
+/* ===== COLOR SYSTEM ===== */
+:root{
+  --bg-0:#02040a;
+  --bg-1:#050b18;
+  --bg-2:#0b1a33;
+
+  --blue-1:#163a6f;
+  --blue-2:#2f6db5;
+  --blue-3:#8fbaff;
+
+  --text-main:rgba(210,225,255,.88);
+  --text-dim: rgba(190,205,235,.48);
+  --text-faint:rgba(170,190,220,.32);
+
+  --glow-soft:rgba(90,140,255,.12);
+  --glow-mid: rgba(90,140,255,.22);
+
+  --border-soft:rgba(120,170,255,.22);
+  --border-hard:rgba(140,190,255,.45);
+}
+
+/* ===== BACKGROUND EFFECTS ===== */
+#noise,
+.scanlines,
+.vignette,
+.dither,
+.warp,
+.glitch-layer,
+.rgb-split{
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+}
+
+.vignette{
+  background:radial-gradient(
+    ellipse at center,
+    rgba(0,0,0,0) 0%,
+    rgba(0,0,0,.35) 45%,
+    rgba(0,0,0,.72) 70%,
+    rgba(0,0,0,.92) 100%
+  );
+  z-index:9;
+}
+
+/* ===== BOOT ===== */
 .boot{
   position:fixed;
   inset:0;
-  z-index:9999;
+  background:#02040a;
+  z-index:1000;
   display:flex;
   align-items:center;
   justify-content:center;
-  background: rgba(0,0,0,.78);
-  backdrop-filter: blur(10px);
 }
 .boot.hidden{ display:none; }
+
 .boot-inner{
-  width:min(540px, calc(100% - 40px));
-  border:1px solid var(--line);
-  border-radius: var(--radius);
-  padding:18px 18px 16px;
-  background: rgba(0,0,0,.42);
-  box-shadow: 0 0 28px var(--glow2);
+  text-align:center;
+  opacity:.9;
 }
 .boot-title{
-  font-family: var(--mono);
-  letter-spacing:.10em;
   font-size:20px;
-  margin-bottom:6px;
+  letter-spacing:.3em;
 }
 .boot-sub{
-  font-family: var(--mono);
-  letter-spacing:.12em;
-  font-size:12px;
-  opacity:.8;
+  font-size:11px;
+  opacity:.6;
 }
 .boot-bar{
   margin-top:14px;
-  height:10px;
-  border-radius:999px;
-  border:1px solid var(--line2);
-  overflow:hidden;
-  background: rgba(0,0,0,.25);
+  height:2px;
+  background:#0b1a33;
 }
 .boot-fill{
+  width:100%;
   height:100%;
-  width:100%;
-  background: linear-gradient(90deg, rgba(120,255,170,.0), rgba(120,255,170,.5), rgba(120,255,170,.0));
-  animation: bootfill 1.4s linear infinite;
-}
-@keyframes bootfill{
-  0%{ transform: translateX(-70%); }
-  100%{ transform: translateX(70%); }
-}
-.boot-hint{
-  margin-top:10px;
-  font-family: var(--mono);
-  font-size:12px;
-  opacity:.8;
-  letter-spacing:.10em;
+  background:#2f6db5;
 }
 
-.offline{
-  position:fixed;
-  inset:0;
-  z-index:9998;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background: rgba(0,0,0,.65);
-  backdrop-filter: blur(6px);
-}
-.offline.hidden{ display:none; }
-.offline-inner{
-  width:min(480px, calc(100% - 40px));
-  border:1px solid rgba(255,90,120,.35);
-  border-radius: var(--radius);
-  padding:14px 16px;
-  background: rgba(0,0,0,.45);
-}
-.offline-title{
-  font-family: var(--mono);
-  letter-spacing:.14em;
-  font-size:16px;
-  color: rgba(255,140,160,.95);
-}
-.offline-sub{
-  font-family: var(--mono);
-  letter-spacing:.12em;
-  font-size:12px;
-  opacity:.85;
-}
-
-/* ----- topbar ----- */
+/* ===== TOP BAR ===== */
 .topbar{
-  position:sticky;
-  top:0;
-  z-index:10;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding:14px 18px;
-  border-bottom:1px solid rgba(120,255,170,.10);
-  background: linear-gradient(180deg, rgba(5,8,12,.86), rgba(5,8,12,.55));
-  backdrop-filter: blur(10px);
-}
-.brand .sig{
-  font-family: var(--mono);
-  font-size:11px;
-  letter-spacing:.12em;
-  opacity:.72;
-}
-.brand .name{
-  font-family: var(--mono);
-  letter-spacing:.12em;
-  font-size:18px;
-  margin-top:4px;
-}
-.top-actions{ display:flex; gap:10px; }
-
-/* ----- shell layout (3 columns like screenshot) ----- */
-.shell{
   position:relative;
-  z-index:6;
-  padding: 18px;
-}
-.shell{
-  display:grid;
-  grid-template-columns: 320px 1fr 420px;
-  gap:18px;
-  align-items:start;
-}
-
-/* ----- panels ----- */
-.panel{
-  border:1px solid rgba(120,255,170,.14);
-  background: rgba(0,0,0,.26);
-  border-radius: 18px;
-  box-shadow:
-    0 0 0 1px rgba(0,0,0,.45) inset,
-    0 0 28px var(--glow2);
-  backdrop-filter: blur(8px);
-  overflow:hidden;
-  min-height: 78vh;
-}
-.panel-title{
-  padding: 12px 14px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: .16em;
-  opacity:.78;
-  border-bottom:1px solid rgba(120,255,170,.08);
-  background: rgba(0,0,0,.22);
-}
-
-/* ----- left: auth/nav ----- */
-.auth, .nav{ padding: 14px; }
-label{ display:block; margin-bottom: 12px; }
-label > span{
-  display:block;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing:.14em;
-  opacity:.70;
-  margin-bottom: 6px;
-}
-input, select, textarea{
-  width:100%;
-  color: var(--txt);
-  background: rgba(0,0,0,.26);
-  border:1px solid rgba(120,255,170,.14);
-  border-radius: 12px;
-  padding: 10px 10px;
-  outline:none;
-}
-input::placeholder, textarea::placeholder{ color: rgba(210,245,235,.35); }
-input:focus, select:focus, textarea:focus{
-  border-color: rgba(120,255,170,.28);
-  box-shadow: 0 0 0 2px rgba(120,255,170,.08);
-}
-.row{
-  display:flex;
-  gap:10px;
-  align-items:center;
-}
-.row .grow{ flex:1; }
-
-.hint, .small{
-  margin: 10px 0 0;
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--muted);
-}
-.filters{ margin-top: 10px; }
-.who{
-  display:flex;
-  gap:10px;
-  align-items:center;
-  padding: 10px 12px;
-  border:1px solid rgba(120,255,170,.12);
-  border-radius: 14px;
-  background: rgba(0,0,0,.18);
-  margin-bottom: 12px;
-}
-.dot{
-  width:10px; height:10px;
-  border-radius:999px;
-  background: rgba(120,255,170,.75);
-  box-shadow: 0 0 12px rgba(120,255,170,.25);
-}
-.who-title{
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing:.14em;
-  opacity:.75;
-}
-.who-email{
-  font-family: var(--mono);
-  font-size: 12px;
-  opacity:.92;
-  margin-top: 3px;
-}
-
-/* ----- pill buttons ----- */
-.pill{
-  appearance:none;
-  border:1px solid rgba(120,255,170,.18);
-  background: rgba(0,0,0,.18);
-  color: var(--txt);
-  padding: 9px 12px;
-  border-radius: 999px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing:.14em;
-  cursor:pointer;
-  transition: transform .06s ease, border-color .15s ease, background .15s ease, opacity .15s ease;
-}
-.pill:hover{
-  border-color: rgba(120,255,170,.32);
-  background: rgba(0,0,0,.26);
-}
-.pill:active{ transform: translateY(1px); }
-.pill.ghost{ background: transparent; }
-.pill.danger{
-  border-color: rgba(255,90,120,.35);
-}
-.pill.danger:hover{
-  border-color: rgba(255,90,120,.55);
-}
-.pill.hidden{ display:none; }
-
-/* ----- “lain card” ----- */
-.lain{
-  margin-top: 12px;
-  border:1px solid rgba(120,255,170,.12);
-  border-radius: 14px;
-  background: rgba(0,0,0,.16);
-  overflow:hidden;
-}
-.lain img{
-  width:100%;
-  display:block;
-  opacity:.85;
-  filter: contrast(1.05) saturate(.9);
-}
-.lain-caption{ padding: 10px 12px; }
-.lain-title{
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing:.14em;
-  opacity:.85;
-}
-.lain-sub{
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing:.10em;
-  opacity:.60;
-  margin-top: 4px;
-}
-
-/* ----- center: list ----- */
-.list{
-  padding: 12px;
-  display:flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.list.empty{ padding: 18px 14px; }
-.empty-msg{
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing:.12em;
-  opacity:.70;
-}
-.item{
-  border:1px solid rgba(120,255,170,.12);
-  border-radius: 16px;
-  background: rgba(0,0,0,.18);
-  padding: 12px 12px;
-  cursor:pointer;
-  transition: border-color .15s ease, background .15s ease, transform .06s ease;
-}
-.item:hover{
-  border-color: rgba(120,255,170,.24);
-  background: rgba(0,0,0,.24);
-}
-.item:active{ transform: translateY(1px); }
-.item .k{
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing:.14em;
-  opacity:.65;
-  margin-bottom: 6px;
-}
-.item .t{
-  font-family: var(--mono);
-  font-size: 13px;
-  letter-spacing:.08em;
-  opacity:.92;
-}
-.item .m{
-  margin-top: 7px;
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--muted);
-}
-.item .d{
-  margin-top: 10px;
-  display:flex;
-  flex-wrap:wrap;
-  gap:8px;
-}
-.badge{
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-  padding: 5px 8px;
-  border-radius: 999px;
-  border:1px solid rgba(120,255,170,.14);
-  background: rgba(0,0,0,.14);
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing:.10em;
-  color: rgba(210,245,235,.82);
-}
-
-/* ----- right: editor ----- */
-.editor{
-  padding: 12px;
-}
-.editor.locked{
-  padding: 18px 14px;
-}
-.locked-msg{
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing:.12em;
-  opacity:.70;
-}
-.editor-inner{
-  display:flex;
-  flex-direction: column;
-  gap: 12px;
-}
-textarea{
-  min-height: 52vh;
-  resize: vertical;
-  line-height: 1.6;
-  font-size: 13px;
-}
-.meta{
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing:.10em;
-  opacity:.55;
-  text-align:right;
-}
-
-/* ----- footer ----- */
-.footer{
-  position:sticky;
-  bottom:0;
-  z-index:10;
+  z-index:5;
   display:flex;
   justify-content:space-between;
-  align-items:center;
-  padding: 10px 14px;
-  border-top:1px solid rgba(120,255,170,.08);
-  background: linear-gradient(0deg, rgba(5,8,12,.86), rgba(5,8,12,.55));
-  backdrop-filter: blur(10px);
-}
-.footer-left, .footer-right{
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing:.12em;
-  opacity:.70;
+  padding:12px 18px;
+  background:linear-gradient(
+    180deg,
+    rgba(5,10,22,.85),
+    rgba(2,4,10,.92)
+  );
+  border-bottom:1px solid var(--border-soft);
 }
 
-/* ----- responsive (mobile) ----- */
-@media (max-width: 1040px){
-  .shell{ grid-template-columns: 1fr; }
-  .panel{ min-height: unset; }
-  textarea{ min-height: 38vh; }
-}
-/* =========================================================
-   GHOST TRACE (restore UI)
-   ========================================================= */
-
-.ghostbox{
-  margin-top:14px;
-  padding:12px;
-  border:1px solid rgba(120,255,170,.12);
-  border-radius:14px;
-  background: rgba(0,0,0,.18);
-  box-shadow: 0 0 18px rgba(80,255,160,.06);
-}
-
-.ghost-title{
-  font-family: var(--mono);
-  font-size:11px;
-  letter-spacing:.14em;
-  opacity:.75;
-  margin-bottom:8px;
-}
-
-.ghost-list{
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-  max-height:180px;
-  overflow:auto;
-  padding-right:4px;
-}
-
-.ghost-empty{
-  font-family: var(--mono);
+.brand .sig{
   font-size:10px;
-  letter-spacing:.12em;
   opacity:.45;
 }
-
-.ghost-item{
-  padding:8px 10px;
-  border-radius:12px;
-  border:1px solid rgba(120,255,170,.10);
-  background: rgba(0,0,0,.16);
-  font-size:12px;
-  line-height:1.5;
-  color: rgba(210,245,235,.85);
+.brand .name{
+  font-size:16px;
+  letter-spacing:.15em;
 }
 
-.ghost-meta{
-  margin-top:4px;
-  font-family: var(--mono);
-  font-size:10px;
-  letter-spacing:.10em;
-  opacity:.55;
+/* ===== LAYOUT ===== */
+.shell{
+  display:grid;
+  grid-template-columns: 300px 1fr 420px;
+  height:calc(100% - 48px);
+  position:relative;
 }
 
-/* =========================================================
-   RGB SPLIT LAYER (visual only)
-   ========================================================= */
-
-.rgb-split{
-  position:fixed;
-  inset:0;
-  z-index:4;
-  pointer-events:none;
-  mix-blend-mode: screen;
-  opacity:.08;
-  background:
-    linear-gradient(90deg,
-      rgba(255,0,80,.12),
-      transparent 40%,
-      transparent 60%,
-      rgba(0,160,255,.12)
-    );
-}
-/* =========================================================
-   WIRED BLUE PALETTE OVERRIDE (drop-in)
-   ========================================================= */
-
-/* 青〜シアン基調（枠/光/文字のトーン） */
-:root{
-  --wired-accent: rgba(80, 160, 255, 0.28);   /* 枠 */
-  --wired-accent2: rgba(80, 160, 255, 0.14);  /* 薄枠 */
-  --wired-glow: rgba(80, 160, 255, 0.10);     /* ぼかし光 */
-  --wired-text: rgba(210, 230, 255, 0.86);    /* 文字 */
-}
-
-/* まず“緑っぽい枠線”を青へ寄せる（広域上書き） */
-.panel,
-.pill,
-.item,
-.auth label,
-.filters label,
-.editor-inner label,
-.ghostbox,
-.ghost-item{
-  border-color: var(--wired-accent2) !important;
-  box-shadow: 0 0 18px var(--wired-glow) !important;
-}
-
-/* ゴースト系（TRACE） */
-.ghostbox{
-  border: 1px solid var(--wired-accent2) !important;
-  background: rgba(0,0,0,.18);
-}
-
-.ghost-title{
-  opacity:.78;
-}
-
-.ghost-item{
-  border: 1px solid var(--wired-accent2) !important;
-  color: var(--wired-text) !important;
-}
-
-.ghost-meta{
-  opacity:.58;
-}
-
-/* バッジや小物も青寄りに */
-.badge{
-  border-color: var(--wired-accent2) !important;
-  color: rgba(200, 225, 255, 0.82) !important;
-}
-
-/* UIの細い線（区切り）も青に */
-.topbar,
-.footer{
-  border-color: rgba(80,160,255,0.12) !important;
-}
-
-/* rgb-splitの色味も青寄りに */
-.rgb-split{
-  opacity:.09;
-  background:
-    linear-gradient(90deg,
-      rgba(90, 120, 255, .14),
-      transparent 40%,
-      transparent 60%,
-      rgba(80, 220, 255, .12)
-    ) !important;
-}
-/* =========================================================
-   DARK VIGNETTE / KERARE OVERRIDE
-   ========================================================= */
-
-/* 画面全体を“少し沈める” */
-body::before{
-  content:"";
-  position: fixed;
-  inset: 0;
-  z-index: 2;               /* noise(=canvas)より上、UIより下にしたいなら後で調整 */
-  pointer-events: none;
-  background: rgba(0,0,0,.18);
-  mix-blend-mode: multiply;
-}
-
-/* ケラレ（四隅が強く落ちる） */
-.vignette{
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 3;
-  background:
-    radial-gradient(ellipse at center,
-      rgba(0,0,0,0.10) 0%,
-      rgba(0,0,0,0.35) 55%,
-      rgba(0,0,0,0.78) 100%);
-  opacity: 1 !important;
-}
-
-/* さらに“端が黒く締まる”感じを足す（好みで） */
-.vignette::after{
-  content:"";
-  position:absolute;
-  inset:-2px;
-  background:
-    radial-gradient(ellipse at center,
-      rgba(0,0,0,0.0) 0%,
-      rgba(0,0,0,0.35) 68%,
-      rgba(0,0,0,0.92) 100%);
-  filter: blur(0.5px);
-  opacity: .85;
-}
-/* =========================================================
-   BACKGROUND: more dark / semi-transparent / hazy
-   ========================================================= */
-
-/* 背景担当っぽい要素がある場合（.bg / .warp / .dither など） */
-.bg, .warp, .dither{
-  opacity: .32 !important;                /* “半透過感” */
-  filter: grayscale(.15) contrast(1.05) brightness(.55) saturate(.85) blur(1.2px) !important;
-}
-
-/* body背景が直で貼られてる場合も沈める */
-body{
-  background-color: #030508 !important;
-  background-blend-mode: multiply;
-}
-
-/* 画像が強すぎる時用：全体に薄い黒膜 */
-body::after{
-  content:"";
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  background: rgba(0,0,0,.42);
-  mix-blend-mode: multiply;
-}
-/* =========================================================
-   CENTER OBJECT: shadowy / ambiguous silhouette
-   ========================================================= */
-
-.lain{
-  opacity: .72;
-}
-
-.lain img{
-  opacity: .22 !important;                 /* かなり薄く */
-  filter: grayscale(1) contrast(.85) brightness(.60) blur(1.6px) !important;
-  mix-blend-mode: screen;                  /* 暗い背景で“幽霊っぽく” */
-  transform: translateZ(0);
-}
-
-/* 輪郭を揺らすような“にじみ”を追加 */
-.lain img{
+/* ===== PANELS ===== */
+.panel{
+  background:linear-gradient(
+    180deg,
+    rgba(10,20,45,.82),
+    rgba(4,8,18,.9)
+  );
+  border:1px solid var(--border-soft);
   box-shadow:
-    0 0 28px rgba(70,140,255,.10),
-    0 0 80px rgba(0,0,0,.35) !important;
+    inset 0 0 0 1px rgba(255,255,255,.02),
+    0 0 18px var(--glow-soft);
+  overflow:hidden;
 }
 
-/* =========================================================
-   AUTH INPUTS: remove white / make dark, wired-like
-   ========================================================= */
-
-.auth label span,
-.filters label span{
-  color: rgba(200,220,255,.78) !important;
-  letter-spacing: .12em;
+.panel-title{
+  font-size:11px;
+  padding:10px 12px;
+  opacity:.55;
+  border-bottom:1px solid rgba(120,170,255,.12);
 }
 
-.auth input,
-.filters input,
-.filters select,
-.auth select{
-  background: rgba(0,0,0,.52) !important;
-  color: rgba(215,235,255,.92) !important;
-  border: 1px solid rgba(120,170,255,.22) !important;  /* ← 青系 */
-  box-shadow: 0 0 18px rgba(70,140,255,.08) !important;
-  outline: none !important;
+/* ===== LEFT / AUTH ===== */
+.auth input{
+  background:rgba(5,10,22,.72);
+  color:var(--text-main);
+  border:1px solid var(--border-soft);
 }
 
-.auth input::placeholder,
-.filters input::placeholder{
-  color: rgba(210,230,255,.35) !important;
+.nav .who{
+  margin:12px;
+  padding:10px;
+  background:rgba(0,0,0,.38);
+  border:1px solid rgba(120,170,255,.14);
+  box-shadow:inset 0 0 18px rgba(0,0,0,.6);
 }
 
-.auth input:focus,
-.filters input:focus,
-.filters select:focus{
-  border-color: rgba(120,170,255,.42) !important;
-  box-shadow: 0 0 0 2px rgba(80,140,255,.12), 0 0 26px rgba(70,140,255,.14) !important;
+/* ===== LAIN / PRESENCE ===== */
+.lain{
+  margin:14px;
+  position:relative;
+}
+.lain img{
+  width:100%;
+  opacity:.42;
+  filter:
+    blur(.6px)
+    contrast(.85)
+    brightness(.75)
+    grayscale(.1);
+  mix-blend-mode:screen;
 }
 
-/* iOSの勝手な白背景・黄背景対策 */
-input, textarea, select{
-  -webkit-appearance: none;
-  appearance: none;
-  -webkit-text-fill-color: rgba(215,235,255,.92);
-  caret-color: rgba(190,230,255,.9);
-}
-input:-webkit-autofill,
-input:-webkit-autofill:hover,
-input:-webkit-autofill:focus{
-  -webkit-text-fill-color: rgba(215,235,255,.92) !important;
-  transition: background-color 9999s ease-in-out 0s !important;
-  box-shadow: 0 0 0 1000px rgba(0,0,0,.58) inset !important;
-  border: 1px solid rgba(120,170,255,.22) !important;
-}
-
-/* =========================================================
-   + NEW LOG: move to center-ish and keep it readable
-   (ログイン後の navBox 内で効く)
-   ========================================================= */
-
-#navBox .filters{
-  position: relative;
-}
-
-/* 既存のレイアウトを崩しにくい「中央寄せ」 */
+/* ===== + NEW LOG (CENTERED LIGHT) ===== */
 #btnNew{
-  display: block;
-  margin: 14px auto 6px auto !important;   /* 真ん中寄りに */
-  width: min(360px, 92%) !important;
-  text-align: center !important;
-  border-color: rgba(120,170,255,.35) !important;
-  box-shadow: 0 0 26px rgba(70,140,255,.16) !important;
+  margin:18px auto;
+  display:block;
+  width:90%;
+  text-align:center;
+  background:rgba(20,40,80,.65);
+  border:1px solid var(--border-hard);
+  box-shadow:
+    0 0 28px rgba(120,180,255,.28),
+    inset 0 0 12px rgba(0,0,0,.6);
 }
 
-/* “自然に明るい場所”っぽい、淡い光だまり */
-#btnNew::before{
-  content:"";
-  position:absolute;
-  left: 50%;
-  top: 0;
-  transform: translate(-50%, -30%);
-  width: 520px;
-  height: 220px;
-  background: radial-gradient(ellipse at center,
-    rgba(70,140,255,.12) 0%,
-    rgba(70,140,255,.05) 35%,
-    rgba(0,0,0,0) 75%);
-  pointer-events:none;
-  z-index: -1;
-  filter: blur(1px);
-  opacity: .9;
+/* ===== LIST ===== */
+.list .item{
+  border-bottom:1px solid rgba(120,170,255,.08);
+  padding:10px;
+}
+.list .item:hover{
+  background:rgba(90,140,255,.06);
 }
 
-/* CONNECTED周りは“読みやすい程度に”暗い中で浮かせる */
-#navBox .who{
-  background: rgba(0,0,0,.28) !important;
-  border: 1px solid rgba(120,170,255,.10) !important;
-  box-shadow: 0 0 18px rgba(70,140,255,.06) !important;
+/* ===== EDITOR ===== */
+.editor textarea,
+.editor input,
+.editor select{
+  background:rgba(5,10,22,.75);
+  color:var(--text-main);
+  border:1px solid var(--border-soft);
 }
 
-/* もしケラレが強すぎて左カラムが暗すぎる時の救済 */
-.panel.left{
-  filter: none !important;
+.editor textarea{
+  min-height:240px;
+}
+
+/* ===== FOOTER ===== */
+.footer{
+  position:relative;
+  z-index:5;
+  display:flex;
+  justify-content:space-between;
+  padding:6px 12px;
+  font-size:10px;
+  background:rgba(2,4,10,.85);
+  border-top:1px solid var(--border-soft);
 }
