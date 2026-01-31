@@ -1,43 +1,13 @@
-
-
-
 // docs/app.js
 import { supabase } from "./supabase.js";
 
-// BOOT SCREEN (must be after import in module)
-(function bootSequence(){
-  // 音：ユーザー操作前は鳴らないことがあるので安全に
-  window.WiredAudio?.bootSound();
-
-  const boot = document.getElementById("boot");
-  if (boot){
-    setTimeout(()=>{ boot.classList.add("hidden"); }, 1450);
-  }
-})();
-
-
+/* ========= helpers ========= */
 const $ = (s) => document.querySelector(s);
 const statusEl = $("#status");
 
-const authBox = $("#authBox");
-const navBox = $("#navBox");
-const whoEmail = $("#whoEmail");
-const btnLogout = $("#btnLogout");
-const btnRefresh = $("#btnRefresh");
-
-const emailEl = $("#email");
-const passEl = $("#password");
-const btnLogin = $("#btnLogin");
-const btnSignup = $("#btnSignup");
-
-const listEl = $("#list");
-const editorEl = $("#editor");
-const editorTpl = $("#editorTpl");
-
-const kindFilterEl = $("#kindFilter");
-const qEl = $("#q");
-const btnNew = $("#btnNew");
-
+function setStatus(msg){
+  if (statusEl) statusEl.textContent = msg;
+}
 
 function isStandalone(){
   return window.matchMedia?.("(display-mode: standalone)")?.matches
@@ -50,20 +20,84 @@ function showOfflineBanner(on){
   el.classList.toggle("hidden", !on);
 }
 
-window.addEventListener("offline", ()=>{ showOfflineBanner(true); setStatus("NO CARRIER // OFFLINE"); window.WiredAudio?.setOffline(true); });
-window.addEventListener("online", ()=>{ showOfflineBanner(false); setStatus("ONLINE // WIRED RESTORED"); window.WiredAudio?.setOffline(false); });
+function glitchPulse(){
+  const g = document.querySelector(".glitch-layer");
+  if (!g) return;
+  g.style.opacity = "1";
+  g.style.transform = `translate(${(Math.random()*6-3).toFixed(1)}px, ${(Math.random()*6-3).toFixed(1)}px)`;
+  setTimeout(()=>{ g.style.opacity = "0"; }, 90 + Math.random()*120);
+}
 
+function escapeHtml(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+function getAction(){
+  const u = new URL(window.location.href);
+  return u.searchParams.get("action");
+}
+
+/* ========= BOOT overlay (module-safe) ========= */
+(function bootSequence(){
+  // NOTE: 音はユーザー操作前に鳴らないことがある（iOS）ので、ここでは鳴らせたら鳴らす程度
+  window.WiredAudio?.bootSound?.();
+
+  const boot = document.getElementById("boot");
+  if (boot){
+    setTimeout(()=> boot.classList.add("hidden"), 1450);
+  }
+})();
+
+/* ========= DOM refs ========= */
+const authBox = $("#authBox");
+const navBox  = $("#navBox");
+const whoEmail = $("#whoEmail");
+
+const btnLogout = $("#btnLogout");
+const btnRefresh = $("#btnRefresh");
+
+const emailEl = $("#email");
+const passEl  = $("#password");
+const btnLogin  = $("#btnLogin");
+const btnSignup = $("#btnSignup");
+
+const listEl   = $("#list");
+const editorEl = $("#editor");
+const editorTpl = $("#editorTpl");
+
+const kindFilterEl = $("#kindFilter");
+const qEl = $("#q");
+const btnNew = $("#btnNew");
+
+/* ========= state ========= */
 let currentUser = null;
 let selected = null;
 let cache = [];
 
-function setStatus(msg){ statusEl.textContent = msg; }
-
-
+// PWA installed only "Hidden" kind
 const INSTALLED_ONLY_KIND = "Hidden";
+
+/* ========= connectivity ========= */
+window.addEventListener("offline", ()=>{
+  showOfflineBanner(true);
+  setStatus("NO CARRIER // OFFLINE");
+  window.WiredAudio?.setOffline?.(true);
+});
+window.addEventListener("online", ()=>{
+  showOfflineBanner(false);
+  setStatus("ONLINE // WIRED RESTORED");
+  window.WiredAudio?.setOffline?.(false);
+});
+
+/* ========= UI states ========= */
 function ensureInstalledKind(){
   if (!isStandalone()) return;
-  // add to KIND filter
+
   const kf = document.getElementById("kindFilter");
   if (kf && !Array.from(kf.options).some(o=>o.value===INSTALLED_ONLY_KIND)){
     const opt = document.createElement("option");
@@ -73,55 +107,66 @@ function ensureInstalledKind(){
   }
 }
 
-
-function glitchPulse(){
-  const g = document.querySelector(".glitch-layer");
-  g.style.opacity = "1";
-  g.style.transform = `translate(${(Math.random()*6-3).toFixed(1)}px, ${(Math.random()*6-3).toFixed(1)}px)`;
-  setTimeout(()=>{ g.style.opacity = "0"; }, 90 + Math.random()*120);
-}
-
 function uiSignedOut(){
-  authBox.classList.remove("hidden");
-  navBox.classList.add("hidden");
-  btnLogout.classList.add("hidden");
-  editorEl.classList.add("locked");
-  editorEl.innerHTML = '<div class="locked-msg">AUTH REQUIRED // CONNECT TO WIRED</div>';
-  listEl.classList.add("empty");
-  listEl.innerHTML = '<div class="empty-msg">NO DATA // WAITING FOR NODE SYNC</div>';
-  whoEmail.textContent = "-";
+  authBox?.classList.remove("hidden");
+  navBox?.classList.add("hidden");
+  btnLogout?.classList.add("hidden");
+
+  if (editorEl){
+    editorEl.classList.add("locked");
+    editorEl.innerHTML = '<div class="locked-msg">AUTH REQUIRED // CONNECT TO WIRED</div>';
+  }
+  if (listEl){
+    listEl.classList.add("empty");
+    listEl.innerHTML = '<div class="empty-msg">NO DATA // WAITING FOR NODE SYNC</div>';
+  }
+  if (whoEmail) whoEmail.textContent = "-";
+
   currentUser = null;
   cache = [];
   selected = null;
 }
 
 function uiSignedIn(user){
-  authBox.classList.add("hidden");
-  navBox.classList.remove("hidden");
-  btnLogout.classList.remove("hidden");
-  editorEl.classList.remove("locked");
+  authBox?.classList.add("hidden");
+  navBox?.classList.remove("hidden");
+  btnLogout?.classList.remove("hidden");
+
+  editorEl?.classList.remove("locked");
   ensureInstalledKind();
-  whoEmail.textContent = user.email ?? "(unknown)";
+
+  if (whoEmail) whoEmail.textContent = user.email ?? "(unknown)";
 }
 
+/* ========= auth ========= */
 async function signup(){
   setStatus("SIGNUP…");
-  const email = emailEl.value.trim();
-  const password = passEl.value;
+  const email = (emailEl?.value ?? "").trim();
+  const password = passEl?.value ?? "";
+
   const { error } = await supabase.auth.signUp({ email, password });
-  if (error){ window.WiredAudio?.errorSound();
-    setStatus("ERR: " + error.message); return; }
+  if (error){
+    window.WiredAudio?.errorSound?.();
+    setStatus("ERR: " + error.message);
+    return;
+  }
+
   setStatus("SIGNED UP. CHECK EMAIL IF REQUIRED.");
   glitchPulse();
 }
 
 async function login(){
   setStatus("LOGIN…");
-  const email = emailEl.value.trim();
-  const password = passEl.value;
+  const email = (emailEl?.value ?? "").trim();
+  const password = passEl?.value ?? "";
+
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error){ window.WiredAudio?.errorSound();
-    setStatus("ERR: " + error.message); return; }
+  if (error){
+    window.WiredAudio?.errorSound?.();
+    setStatus("ERR: " + error.message);
+    return;
+  }
+
   setStatus("CONNECTED.");
   glitchPulse();
   await onSession(data.session);
@@ -130,27 +175,55 @@ async function login(){
 async function logout(){
   setStatus("LOGOUT…");
   const { error } = await supabase.auth.signOut();
-  if (error){ window.WiredAudio?.errorSound();
-    setStatus("ERR: " + error.message); return; }
+  if (error){
+    window.WiredAudio?.errorSound?.();
+    setStatus("ERR: " + error.message);
+    return;
+  }
   setStatus("DISCONNECTED.");
   uiSignedOut();
   glitchPulse();
 }
 
+/* ========= list / filter ========= */
+function filtered(){
+  const kind = kindFilterEl?.value ?? "ALL";
+  const q = (qEl?.value ?? "").trim().toLowerCase();
+
+  return cache.filter(it=>{
+    // NOTE: Hidden は DB 上 kind="Other" + tag "hidden"
+    // filterでHiddenを見せたい場合だけ変換
+    if (kind === INSTALLED_ONLY_KIND){
+      return it.kind === "Other" && (it.tags||[]).includes("hidden");
+    }
+    if (kind !== "ALL" && it.kind !== kind) return false;
+
+    if (!q) return true;
+    const blob = `${it.kind} ${it.title} ${it.body} ${(it.tags||[]).join(" ")}`.toLowerCase();
+    return blob.includes(q);
+  });
+}
+
 function renderList(items){
+  if (!listEl) return;
+
   if (!items.length){
     listEl.classList.add("empty");
     listEl.innerHTML = '<div class="empty-msg">NO DATA // CREATE FIRST LOG</div>';
     return;
   }
+
   listEl.classList.remove("empty");
   listEl.innerHTML = "";
+
   for (const it of items){
     const div = document.createElement("div");
     div.className = "item";
     div.dataset.id = it.id;
+
     const preview = (it.body || "").replace(/\s+/g," ").slice(0, 120);
     const tags = (it.tags || []).slice(0,4).map(t=>`<span class="badge">#${escapeHtml(t)}</span>`).join("");
+
     div.innerHTML = `
       <div class="k">${escapeHtml(it.kind)}${it.mood===null||it.mood===undefined? "" : ` // mood ${it.mood}`}</div>
       <div class="t">${escapeHtml(it.title || "(no title)")}</div>
@@ -165,27 +238,74 @@ function renderList(items){
   }
 }
 
+async function fetchLogs(){
+  if (!currentUser) return;
+
+  setStatus("SYNC…");
+  const { data, error } = await supabase
+    .from("logs")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  if (error){
+    window.WiredAudio?.errorSound?.();
+    setStatus("ERR: " + error.message);
+    return;
+  }
+
+  cache = data || [];
+  renderList(filtered());
+  setStatus(`SYNC OK // ${cache.length} logs`);
+}
+
+/* ========= editor ========= */
+function mapHiddenKind(kind, tags){
+  if (kind === INSTALLED_ONLY_KIND){
+    const t = Array.isArray(tags) ? tags.slice() : [];
+    if (!t.includes("hidden")) t.unshift("hidden");
+    return { kind: "Other", tags: t };
+  }
+  return { kind, tags };
+}
+
 function openEditor(it){
   selected = it;
-  editorEl.innerHTML = "";
-  const node = editorTpl.content.cloneNode(true);
-  editorEl.appendChild(node);
 
-  const isHidden = isStandalone() && (it.kind === 'Other') && (it.tags||[]).includes('hidden');
+  if (!editorEl || !editorTpl) return;
+
+  editorEl.innerHTML = "";
+  editorEl.appendChild(editorTpl.content.cloneNode(true));
+
+  const isHidden = isStandalone() && (it.kind === "Other") && (it.tags||[]).includes("hidden");
+
+  // KIND option injection
   const kindSel = $("#kind");
   if (isStandalone() && kindSel && !Array.from(kindSel.options).some(o=>o.value===INSTALLED_ONLY_KIND)){
-    const opt = document.createElement('option'); opt.value = INSTALLED_ONLY_KIND; opt.textContent = INSTALLED_ONLY_KIND; kindSel.appendChild(opt);
+    const opt = document.createElement("option");
+    opt.value = INSTALLED_ONLY_KIND;
+    opt.textContent = INSTALLED_ONLY_KIND;
+    kindSel.appendChild(opt);
   }
-  kindSel.value = isHidden ? INSTALLED_ONLY_KIND : it.kind;
+
+  if (kindSel) kindSel.value = isHidden ? INSTALLED_ONLY_KIND : (it.kind ?? "Note");
+
   $("#title").value = it.title ?? "";
-  $("#tags").value = (it.tags || []).join(", ");
-  if (isHidden) { $("#tags").value = (it.tags||[]).filter(t=>t!=='hidden').join(", "); }
+  $("#tags").value  = (it.tags || []).join(", ");
+  if (isHidden){
+    $("#tags").value = (it.tags||[]).filter(t=>t!=="hidden").join(", ");
+  }
   $("#mood").value = (it.mood ?? "");
   $("#body").value = it.body ?? "";
-  $("#metaLine").textContent = `id ${it.id} // created ${new Date(it.created_at).toLocaleString()} // updated ${new Date(it.updated_at).toLocaleString()}`;
+
+  $("#metaLine").textContent =
+    `id ${it.id ?? "-"} // created ${new Date(it.created_at).toLocaleString()} // updated ${new Date(it.updated_at).toLocaleString()}`;
 
   $("#btnSave").onclick = saveCurrent;
   $("#btnDelete").onclick = deleteCurrent;
+
+  // focus for fast writing
+  $("#body")?.focus();
 
   glitchPulse();
 }
@@ -196,7 +316,7 @@ function newEditor(kindOverride = null){
     (getAction()==="hidden" && isStandalone() ? INSTALLED_ONLY_KIND : "Note")
   );
 
-  const it = {
+  openEditor({
     id: null,
     kind: kindValue,
     title: "",
@@ -205,69 +325,16 @@ function newEditor(kindOverride = null){
     mood: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-  };
-  openEditor(it);
-}
-
-
-
-function getAction(){
-  const u = new URL(window.location.href);
-  return u.searchParams.get("action");
-}
-
-function escapeHtml(s){
-  return String(s ?? "")
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
-}
-
-function filtered(){
-  const kind = kindFilterEl.value;
-  const q = qEl.value.trim().toLowerCase();
-  return cache.filter(it=>{
-    if (kind !== "ALL" && it.kind !== kind) return false;
-    if (!q) return true;
-    const blob = `${it.kind} ${it.title} ${it.body} ${(it.tags||[]).join(" ")}`.toLowerCase();
-    return blob.includes(q);
   });
 }
 
-async function fetchLogs(){
-  if (!currentUser) return;
-  setStatus("SYNC…");
-  const { data, error } = await supabase
-    .from("logs")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(200);
-
-  if (error){ window.WiredAudio?.errorSound();
-    setStatus("ERR: " + error.message); return; }
-  cache = data || [];
-  renderList(filtered());
-  setStatus(`SYNC OK // ${cache.length} logs`);
-}
-
-
-function mapHiddenKind(kind, tags){
-  if (kind === INSTALLED_ONLY_KIND){
-    const t = Array.isArray(tags) ? tags.slice() : [];
-    if (!t.includes("hidden")) t.unshift("hidden");
-    return { kind: "Other", tags: t };
-  }
-  return { kind, tags };
-}
-
+/* ========= SAVE behavior: save -> immediate clear -> next log (keep kind) ========= */
 async function saveCurrent(){
   if (!currentUser || !selected) return;
+
   setStatus("SAVE…");
 
-  // いまの種別（UI上の）を保持
-  const keepKindUI = $("#kind").value;
+  const keepKindUI = $("#kind").value; // keep for next log
 
   const rawKind = $("#kind").value;
   const rawTags = $("#tags").value.split(",").map(s=>s.trim()).filter(Boolean);
@@ -282,120 +349,77 @@ async function saveCurrent(){
     user_id: currentUser.id,
   };
 
+  // INSERT
   if (!selected.id){
-    const { error } = await supabase
-      .from("logs")
-      .insert(payload);
+    const { error } = await supabase.from("logs").insert(payload);
 
     if (error){
-      window.WiredAudio?.errorSound();
+      window.WiredAudio?.errorSound?.();
       setStatus("ERR: " + error.message);
       return;
     }
 
-    window.WiredAudio?.saveSound();
-    window.WiredAudio?.applyMood(payload.mood);
+    window.WiredAudio?.saveSound?.();
+    window.WiredAudio?.applyMood?.(payload.mood);
     setStatus("SAVED (NEW).");
     glitchPulse();
 
     await fetchLogs();
 
-    window.WiredAudio?.applyMood(0);
+    // next blank log
+    window.WiredAudio?.applyMood?.(0);
     newEditor(keepKindUI);
+    setStatus("READY // NEXT LOG");
     return;
   }
 
+  // UPDATE
   const { error } = await supabase
     .from("logs")
     .update(payload)
     .eq("id", selected.id);
 
   if (error){
-    window.WiredAudio?.errorSound();
+    window.WiredAudio?.errorSound?.();
     setStatus("ERR: " + error.message);
     return;
   }
 
-  window.WiredAudio?.saveSound();
-  window.WiredAudio?.applyMood(payload.mood);
+  window.WiredAudio?.saveSound?.();
+  window.WiredAudio?.applyMood?.(payload.mood);
   setStatus("SAVED (UPDATE).");
   glitchPulse();
 
   await fetchLogs();
 
-  window.WiredAudio?.applyMood(0);
+  // next blank log (your requested behavior)
+  window.WiredAudio?.applyMood?.(0);
   newEditor(keepKindUI);
-}
-
-  // INSERT
-  if (!selected.id){
-    const { data, error } = await supabase
-      .from("logs")
-      .insert(payload)
-      .select("*")
-      .single();
-
-    if (error){
-      window.WiredAudio?.errorSound();
-      setStatus("ERR: " + error.message);
-      return;
-    }
-
-    window.WiredAudio?.saveSound();
-    window.WiredAudio?.applyMood(payload.mood);
-    setStatus("SAVED (NEW).");
-    glitchPulse();
-
-    // リストだけ更新（表示は新規へ）
-    await fetchLogs();
-
-    // ✅ ここが肝：保存したログを開き直さず、次の新規へ
-    window.WiredAudio?.applyMood(0);
-    newEditor(keepKindUI);
-    return;
-  }
-
-  // UPDATE
-  const { data, error } = await supabase
-    .from("logs")
-    .update(payload)
-    .eq("id", selected.id)
-    .select("*")
-    .single();
-
-  if (error){
-    window.WiredAudio?.errorSound();
-    setStatus("ERR: " + error.message);
-    return;
-  }
-
-  window.WiredAudio?.saveSound();
-  window.WiredAudio?.applyMood(payload.mood);
-  setStatus("SAVED (UPDATE).");
-  glitchPulse();
-
-  await fetchLogs();
-
-  // ✅ 更新でも「次を書く」方向に倒す（あなたの要求に合わせる）
-  window.WiredAudio?.applyMood(0);
-  newEditor(keepKindUI);
+  setStatus("READY // NEXT LOG");
 }
 
 async function deleteCurrent(){
   if (!currentUser || !selected?.id) return;
   if (!confirm("DELETE THIS LOG?")) return;
+
   setStatus("DELETE…");
   const { error } = await supabase.from("logs").delete().eq("id", selected.id);
-  if (error){ window.WiredAudio?.errorSound();
-    setStatus("ERR: " + error.message); return; }
+
+  if (error){
+    window.WiredAudio?.errorSound?.();
+    setStatus("ERR: " + error.message);
+    return;
+  }
+
   setStatus("DELETED.");
   glitchPulse();
+
   selected = null;
   await fetchLogs();
   newEditor();
-  if (getAction()==='counselling' || getAction()==='new' || getAction()==='hidden') { glitchPulse(); }
 }
 
+/* ========= session ========= */
 async function onSession(session){
   if (!session?.user){
     uiSignedOut();
@@ -403,18 +427,21 @@ async function onSession(session){
   }
   currentUser = session.user;
   uiSignedIn(currentUser);
+
   await fetchLogs();
   newEditor();
-  if (getAction()==='counselling' || getAction()==='new' || getAction()==='hidden') { glitchPulse(); }
 }
 
+/* ========= events ========= */
 btnSignup?.addEventListener("click", signup);
 
-btnLogin?.addEventListener("click", ()=>{ 
-  window.WiredAudio?.resumeAudio();
-  window.WiredAudio?.bootSound();
+// ONE login handler (no duplicates)
+btnLogin?.addEventListener("click", ()=>{
+  window.WiredAudio?.resumeAudio?.();
+  window.WiredAudio?.bootSound?.();
   login();
 });
+
 btnLogout?.addEventListener("click", logout);
 
 btnRefresh?.addEventListener("click", async ()=>{
@@ -424,7 +451,7 @@ btnRefresh?.addEventListener("click", async ()=>{
 
 btnNew?.addEventListener("click", ()=>{
   glitchPulse();
-  newEditor();
+  newEditor($("#kind")?.value ?? null); // new log keeps current kind if editor exists
 });
 
 kindFilterEl?.addEventListener("change", ()=> renderList(filtered()));
@@ -435,7 +462,7 @@ document.addEventListener("input", ()=>{
   window.__noiseBoost = Math.min(1, (window.__noiseBoost || 0) + 0.2);
 });
 
-// Init session
+/* ========= init ========= */
 setStatus("BOOT…");
 showOfflineBanner(!navigator.onLine);
 
