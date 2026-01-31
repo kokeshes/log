@@ -38,7 +38,17 @@ function isAbortError(e){
 }
 
 function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
-
+async function debugProbe(label){
+  try{
+    const { data } = await supabase.auth.getSession();
+    const has = !!data?.session;
+    console.log(`[PROBE ${label}] session=`, has, data?.session?.user?.email);
+    setStatus(`${label} // session=${has ? "YES" : "NO"}`);
+  }catch(e){
+    console.log(`[PROBE ${label}] ERR`, e);
+    setStatus(`${label} // ERR ${e?.name || ""}`);
+  }
+}
 /* Supabase getter (DO NOT keep as const) */
 function sb(){
   return getSupabase();
