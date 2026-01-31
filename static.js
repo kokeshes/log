@@ -1,8 +1,10 @@
 /* =========================================================
    STATIC ROOM // THE WIRED
    full replace static.js
-   - stable + UI toggle + UI scramble
-   - audio: iOS/PWA resilient (resume + soft rebuild)
+   - iOS/PWA audio death recovery (AUDIO GATE + reconnect)
+   - UI toggle (desktop + mobile gestures)
+   - ghost trace
+   - horror injection + shadow + blink + scramble
 ========================================================= */
 
 const $ = (s) => document.querySelector(s);
@@ -26,21 +28,31 @@ const btnToggle = $("#btnToggle");
 const btnBurst  = $("#btnBurst");
 const btnCalm   = $("#btnCalm");
 const btnUI     = $("#btnUI");
+const btnAudioReset = $("#btnAudioReset");
 
 const vIntensity = $("#vIntensity");
 const vGlitch    = $("#vGlitch");
 const aVol       = $("#aVol");
 const aTone      = $("#aTone");
 
+const audioGate = $("#audioGate");
+const btnAudioReconnect = $("#btnAudioReconnect");
+const btnAudioDismiss = $("#btnAudioDismiss");
+const audioStateEl = $("#audioState");
+const audioBadge = $("#audioBadge");
+
 if (!canvas || !ctx){
   throw new Error("staticCanvas not found or 2D context failed");
 }
 
-function logDiag(msg){
-  try{
-    if (badge) badge.textContent = msg;
-    console.log(msg);
-  }catch{}
+function setDiag(msg){
+  try{ if (badge) badge.textContent = msg; }catch{}
+  try{ console.log(msg); }catch{}
+}
+
+function setAudioBadge(msg){
+  if (!audioBadge) return;
+  audioBadge.textContent = msg;
 }
 
 /* =========================================================
@@ -99,7 +111,7 @@ addEventListener("touchstart", (e)=>{
   lpTimer = Timeout(()=>{
     const off = !document.body.classList.contains("ui-off");
     UIOff(off, off);
-    try{ burst = Math.max(burst, 0.25); }catch{}
+    burst = Math.max(burst, 0.25);
   }, 650);
 }, { passive: true });
 
@@ -247,13 +259,13 @@ function resize(){
   img = rctx.createImageData(RW, RH);
   data = img.data;
 
-  logDiag(`static ok// ${W}x${H} dpr ${DPR} // R ${RW}x${RH} // do not panic. observe`);
+  setDiag(`static ok// ${W}x${H} dpr ${DPR} // R ${RW}x${RH} // do not panic. observe`);
 }
 addEventListener("resize", resize);
 resize();
 
 /* =========================================================
-   UI scramble
+   UI scramble (pills + UI)
 ========================================================= */
 const SCRAMBLE_CHARS =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_#@$%+*-=<>[]{}" +
@@ -408,9 +420,9 @@ function triggerShadow(){
 }
 
 /* =========================================================
-   AUDIO (iOS/PWA resilient)
-   - resume on gesture
-   - rebuild if "running but silent" suspected
+   AUDIO (WebAudio) — iOS/PWA resilient
+   - show gate when suspended/interrupted
+   - explicit reconnect button ALWAYS available
 ========================================================= */
 let audioCtx = null, master = null;
 let noiseSrc = null, noiseGain = null;
@@ -418,10 +430,6 @@ let humOsc = null, humGain = null;
 let filterLP = null, filterHP = null;
 let wobbleOsc = null, wobbleGain = null;
 let comp = null;
-
-let audioPrimed = false;     // user gesture already happened
-let audioBroken = false;     // mark if we suspect broken session
-let lastAudioKickAt = 0;
 
 function makeNoiseBuffer(ac){
   const seconds = 2;
@@ -508,7 +516,57 @@ function ensureAudio(){
   humOsc.start();
   wobbleOsc.start();
 
+  // state change watch (iOS)
+  try{
+    audioCtx.onstatechange = ()=>{
+      updateAudioUI();
+      if (audioCtx && audioCtx.state !== "running"){
+        showAudioGate(true);
+      }
+    };
+  }catch{}
+
   applyAudioParams();
+  updateAudioUI();
+}
+
+function updateAudioUI(){
+  const st = audioCtx ? audioCtx.state : "none";
+  if (audioStateEl) audioStateEl.textContent = `state: ${st}`;
+  setAudioBadge(`AUDIO: ${st.toUpperCase()}`);
+}
+
+function showAudioGate(on){
+  if (!audioGate) return;
+  audioGate.classList.toggle("hidden", !on);
+}
+
+async function hardResumeAudio(){
+  ensureAudio();
+  if (!audioCtx) return false;
+
+  try{
+    // iOS/PWA: user gesture context required
+    if (audioCtx.state !== "running"){
+      await audioCtx.resume();
+    }
+
+    // safety: kick gain
+    if (master){
+      const t = audioCtx.currentTime;
+      master.gain.cancelScheduledValues(t);
+      master.gain.setTargetAtTime(0.35, t, 0.02);
+    }
+
+    updateAudioUI();
+    showAudioGate(false);
+    return true;
+  }catch(e){
+    console.warn("AUDIO RESUME FAILED", e);
+    updateAudioUI();
+    showAudioGate(true);
+    return false;
+  }
 }
 
 function applyAudioParams(){
@@ -523,108 +581,52 @@ function applyAudioParams(){
 
   humGain.gain.setTargetAtTime(0.03 + tone * 0.10, audioCtx.currentTime, 0.06);
   noiseGain.gain.setTargetAtTime(0.18 + (1-tone) * 0.22, audioCtx.currentTime, 0.06);
+
+  updateAudioUI();
 }
 
 aVol?.addEventListener("input", applyAudioParams);
 aTone?.addEventListener("input", applyAudioParams);
 
-// “silent running”対策：極小クリックでオーディオセッションを掴み直す
-function audioKick(){
-  if (!audioCtx || !master) return;
-  const now = performance.now();
-  if (now - lastAudioKickAt < 800) return;
-  lastAudioKickAt = now;
-
-  try{
-    const t0 = audioCtx.currentTime;
-    const click = audioCtx.createOscillator();
-    const cg = audioCtx.createGain();
-    click.type = "square";
-    click.frequency.value = 900 + Math.random()*900;
-    cg.gain.value = 0.0;
-    click.connect(cg); cg.connect(master);
-    click.start(t0);
-    cg.gain.setValueAtTime(0.0, t0);
-    cg.gain.linearRampToValueAtTime(0.03, t0 + 0.004);
-    cg.gain.linearRampToValueAtTime(0.0, t0 + 0.018);
-    click.stop(t0 + 0.03);
-  }catch{}
-}
-
-// ソフト復旧：resume + kick
-async function audioResumeSoft(){
-  try{
-    ensureAudio();
-    if (audioCtx?.state !== "running"){
-      await audioCtx.resume();
-    }
-    applyAudioParams();
-    audioKick();
-    audioBroken = false;
-    return true;
-  }catch(e){
-    console.warn("audioResumeSoft failed", e);
-    audioBroken = true;
-    return false;
-  }
-}
-
-// ハード復旧：いったんclose→作り直し
-async function audioRebuildHard(){
-  try{
-    if (audioCtx){
-      try{ await audioCtx.close(); }catch{}
-    }
-  }catch{}
-  audioCtx = null; master = null;
-  noiseSrc = null; noiseGain = null;
-  humOsc = null; humGain = null;
-  filterLP = null; filterHP = null;
-  wobbleOsc = null; wobbleGain = null;
-  comp = null;
-
+btnEnable?.addEventListener("click", async ()=>{
   ensureAudio();
-  try{ await audioCtx.resume(); }catch{}
-  applyAudioParams();
-  audioKick();
-  audioBroken = false;
-  return true;
-}
-
-// 公開API（他ページ/ボタンからも呼べる）
-window.WiredAudio = window.WiredAudio || {};
-window.WiredAudio.reconnect = async ()=>{
-  const ok = await audioResumeSoft();
-  if (ok) return true;
-  return await audioRebuildHard();
-};
-
-btnEnable?.addEventListener("click", async () => {
-  audioPrimed = true;
-  await window.WiredAudio.reconnect?.();
+  await hardResumeAudio();
   if (btnEnable) btnEnable.textContent = "AUDIO READY";
 });
 
-/* ✅ iOS/PWA: どこタップでも復旧（UI要素の上でもOK） */
-["pointerdown","touchstart"].forEach(ev=>{
-  window.addEventListener(ev, async ()=>{
-    // ユーザーが触った＝復旧チャンス
-    if (!audioPrimed) return; // まだ音を使う意思がないなら無駄に起動しない
-    if (audioBroken || (audioCtx && audioCtx.state !== "running")){
-      await window.WiredAudio.reconnect?.();
-    }
-  }, { passive:true });
+btnAudioReset?.addEventListener("click", async ()=>{
+  const ok = await hardResumeAudio();
+  if (!ok) alert("AUDIO RECONNECT FAILED\nもう一度タップしてください。");
 });
 
-/* ✅ 復帰時（他動画→戻る）に復旧 */
-document.addEventListener("visibilitychange", async ()=>{
+btnAudioReconnect?.addEventListener("click", async ()=>{
+  const ok = await hardResumeAudio();
+  if (!ok) alert("AUDIO RECONNECT FAILED\nもう一度タップしてください。");
+});
+
+btnAudioDismiss?.addEventListener("click", ()=>{
+  showAudioGate(false);
+});
+
+// “どこかをタップしても復帰できる”保険（UI操作を邪魔しない）
+function gestureResumeHandler(ev){
+  // gateが出ている時だけ拾う
+  if (!audioGate || audioGate.classList.contains("hidden")) return;
+  hardResumeAudio();
+}
+document.addEventListener("click", gestureResumeHandler, true);
+document.addEventListener("touchend", gestureResumeHandler, { passive: true, capture: true });
+
+// iOS/PWA: 復帰時に死んでることが多いので、見えたら gate 出す
+document.addEventListener("visibilitychange", ()=>{
   if (document.visibilityState === "visible"){
-    if (audioPrimed){
-      // iOSはrunningでも死ぬことがあるのでkickを含む
-      const ok = await audioResumeSoft();
-      if (!ok) await audioRebuildHard();
-    }
+    updateAudioUI();
+    if (audioCtx && audioCtx.state !== "running") showAudioGate(true);
   }
+});
+window.addEventListener("pageshow", ()=>{
+  updateAudioUI();
+  if (audioCtx && audioCtx.state !== "running") showAudioGate(true);
 });
 
 /* =========================================================
@@ -635,21 +637,21 @@ let burst = 0;
 let tick = 0;
 let nextHorrorAt = performance.now() + 2500;
 
-btnBurst?.addEventListener("click", () => {
+btnBurst?.addEventListener("click", ()=>{
   burst = 1.0;
   glitchPulse();
   if (Math.random() < 0.6) triggerBlink();
   if (Math.random() < 0.55) triggerShadow();
 });
 
-btnCalm?.addEventListener("click", () => {
+btnCalm?.addEventListener("click", ()=>{
   burst = 0.0;
   blinkCanvas?.classList.remove("on");
   bctx?.clearRect(0,0,W,H);
   shadowImg?.classList.remove("on");
 });
 
-btnToggle?.addEventListener("click", async () => {
+btnToggle?.addEventListener("click", async ()=>{
   running = !running;
   if (btnToggle) btnToggle.textContent = running ? "STOP" : "START";
 
@@ -660,10 +662,10 @@ btnToggle?.addEventListener("click", async () => {
 
   if (running){
     burst = Math.max(burst, 0.2);
-
-    // ✅ running開始時に音を掴み直す（iOS復旧）
-    audioPrimed = true;
-    await window.WiredAudio.reconnect?.();
+    // “開始”操作はユーザー操作なので、ここで復帰を試す
+    if (audioCtx) { try{ await audioCtx.resume(); }catch{} }
+    updateAudioUI();
+    if (audioCtx && audioCtx.state !== "running") showAudioGate(true);
 
     const line = injectHorrorText();
     if (line) pushGhostTrace(line);
@@ -728,7 +730,7 @@ function loop(){
         if (Math.random() < 0.45) triggerShadow();
         if (Math.random() < 0.35) glitchPulse();
 
-        // audio wobble + click (also helps keep session alive)
+        // audio wobble + click
         if (audioCtx && humOsc && filterLP && noiseGain && master){
           const t0 = audioCtx.currentTime;
 
@@ -744,8 +746,19 @@ function loop(){
           noiseGain.gain.setTargetAtTime(0.32 + Math.random()*0.18, t0, 0.03);
           noiseGain.gain.setTargetAtTime(0.26, t0 + 0.25, 0.12);
 
-          // keep-alive click
-          audioKick();
+          const click = audioCtx.createOscillator();
+          const cg = audioCtx.createGain();
+          click.type = "square";
+          click.frequency.value = 1200 + Math.random()*800;
+          cg.gain.value = 0.0;
+          click.connect(cg);
+          cg.connect(master);
+
+          click.start(t0);
+          cg.gain.setValueAtTime(0.0, t0);
+          cg.gain.linearRampToValueAtTime(0.08, t0 + 0.005);
+          cg.gain.linearRampToValueAtTime(0.0, t0 + 0.02);
+          click.stop(t0 + 0.03);
         }
 
         nextHorrorAt = now + (Math.random() < 0.18 ? (180 + Math.random()*420) : (1200 + Math.random()*2800));
@@ -772,7 +785,7 @@ function loop(){
   maybeScramble(power);
   if (running) maybeScrambleUI(power);
 
-  // audio base level (louder)
+  // audio base level
   if (audioCtx && master){
     const vol = Number(aVol?.value ?? 26) / 100;
     const target = (running ? vol*1.0 : vol*0.30);
@@ -780,4 +793,7 @@ function loop(){
   }
 }
 
+// Boot: do not auto-start audio; just reflect state
+setAudioBadge("AUDIO: NONE");
+showAudioGate(false);
 loop();
