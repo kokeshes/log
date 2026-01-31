@@ -397,36 +397,109 @@ function newEditor(kindOverride = null){
 }
 
 /* ========= SAVE behavior: save -> immediate clear -> next log (keep kind) ========= */
-/* ========= SAVE behavior: save -> immediate clear -> next log (keep kind) ========= */
 async function saveCurrent(){
-  // SAVE前：セッション確認（ついでに currentUser を確実に更新）
-  const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+  try{
+    // SAVE前：セッション確認（ついでに currentUser を確実に更新）
+    const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
 
-  if (sessionErr){
-    setStatus("SESSION CHECK FAILED");
-    window.WiredAudio?.errorSound();
-    alert("セッション確認に失敗しました。通信状態を確認してください。");
-    return;
+    if (sessionErr){
+      setStatus("SESSION CHECK FAILED");
+      window.WiredAudio?.errorSound?.();
+      alert("セッション確認に失敗しました。通信状態を確認してください。");
+      return;
+    }
+
+    const user = sessionData?.session?.user;
+    if (!user){
+      setStatus("SESSION EXPIRED // RECONNECT REQUIRED");
+      window.WiredAudio?.errorSound?.();
+      alert("セッションが切れています。再ログインしてください。\n（本文は消えていません）");
+      return;
+    }
+
+    currentUser = user;
+
+    if (!selected){
+      setStatus("EDITOR STATE LOST // RELOAD");
+      window.WiredAudio?.errorSound?.();
+      alert("エディタ状態が失われました。ページを更新してください。\n（念のため本文をコピーしてから）");
+      return;
+    }
+
+    setStatus("SAVE…");
+
+    const keepKindUI = $("#kind")?.value ?? "Note";
+
+    // ✅ mapped を必ず作る（ここが抜けてたのが“SAVE…で止まる”主因）
+    const rawKind = $("#kind")?.value ?? "Note";
+    const rawTags = ($("#tags")?.value ?? "")
+      .split(",").map(s=>s.trim()).filter(Boolean);
+
+    const mapped = mapHiddenKind(rawKind, rawTags);
+
+    const payload = {
+      kind: mapped.kind,
+      title: ($("#title")?.value ?? "").trim(),
+      body:  ($("#body")?.value ?? ""),
+      tags:  mapped.tags,
+      mood:  ($("#mood")?.value ?? "") === "" ? null : Number($("#mood")?.value),
+      user_id: currentUser.id,
+    };
+
+    // INSERT
+    if (!selected.id){
+      const { error } = await supabase.from("logs").insert(payload);
+
+      if (error){
+        window.WiredAudio?.errorSound?.();
+        setStatus("ERR: " + error.message);
+        return;
+      }
+
+      window.WiredAudio?.saveSound?.();
+      window.WiredAudio?.applyMood?.(payload.mood);
+      setStatus("SAVED (NEW).");
+      glitchPulse();
+
+      await fetchLogs();
+
+      window.WiredAudio?.applyMood?.(0);
+      newEditor(keepKindUI);
+      setStatus("READY // NEXT LOG");
+      return;
+    }
+
+    // UPDATE
+    const { error } = await supabase
+      .from("logs")
+      .update(payload)
+      .eq("id", selected.id);
+
+    if (error){
+      window.WiredAudio?.errorSound?.();
+      setStatus("ERR: " + error.message);
+      return;
+    }
+
+    window.WiredAudio?.saveSound?.();
+    window.WiredAudio?.applyMood?.(payload.mood);
+    setStatus("SAVED (UPDATE).");
+    glitchPulse();
+
+    await fetchLogs();
+
+    window.WiredAudio?.applyMood?.(0);
+    newEditor(keepKindUI);
+    setStatus("READY // NEXT LOG");
+
+  }catch(e){
+    // ✅ 例外が出ても“SAVE…”で固まらないようにする
+    console.error(e);
+    window.WiredAudio?.errorSound?.();
+    setStatus("ERR: " + (e?.message ?? String(e)));
+    alert("保存処理で例外が発生しました。\nConsole を確認してください。\n" + (e?.message ?? e));
   }
-
-  const user = sessionData?.session?.user;
-  if (!user){
-    setStatus("SESSION EXPIRED // RECONNECT REQUIRED");
-    window.WiredAudio?.errorSound();
-    alert("セッションが切れています。再ログインしてください。\n（本文は消えていません）");
-    return;
-  }
-
-  // ✅ currentUser をここで確定させる（放置復帰でnullのまま問題を潰す）
-  currentUser = user;
-
-  // selected が無い＝エディタがまだ開いてない/壊れてる
-  if (!selected){
-    setStatus("EDITOR STATE LOST // RELOAD");
-    window.WiredAudio?.errorSound();
-    alert("エディタ状態が失われました。ページを更新してください。\n（念のため本文をコピーしてから）");
-    return;
-  }
+}
 
   setStatus("SAVE…");
 
@@ -563,21 +636,28 @@ const { data } = await supabase.auth.getSession();
 await onSession(data.session);
 
 supabase.auth.onAuthStateChange(async (event, session)=>{
-  // 既存のセッション反映
   await onSession(session);
 
-  // ===== 放置対策：トークン異常をUIに通知 =====
   if (event === "TOKEN_REFRESH_FAILED"){
     setStatus("TOKEN LOST // PLEASE RELOGIN");
-    window.WiredAudio?.errorSound();
+    window.WiredAudio?.errorSound?.();
   }
 
   if (event === "SIGNED_OUT"){
     setStatus("SIGNED OUT // AUTH REQUIRED");
   }
-  setInterval(async ()=>{
-  await supabase.auth.getSession();
-}, 5 * 60 * 1000); // 5分に1回
+});
+
+// ===== SESSION KEEP-ALIVE (idle-safe) =====
+// ※ ここは“1回だけ”設定する（onAuthStateChangeの外）
+setInterval(async ()=>{
+  try{
+    await supabase.auth.getSession();
+  }catch(e){
+    // 通信が揺れてもUXを壊さない
+  }
+}, 5 * 60 * 1000);
+
 
 });
 
