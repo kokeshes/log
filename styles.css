@@ -636,28 +636,15 @@ input:focus, select:focus, textarea:focus{
 /* =========================
    LAIN SHADOW APPARITION
    ========================= */
-
 #shadowImg{
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-
   opacity: 0;
-  display: block;
   pointer-events: none;
-
-  z-index: 6; /* ノイズ・ビデオより上、UIより下 */
-  mix-blend-mode: screen;
-  filter: contrast(1.2) brightness(.9);
-
-  transition:
-    opacity .14s linear,
-    transform .12s linear;
+  z-index: 6;
+  mix-blend-mode: multiply;
+  filter: contrast(1.35) brightness(.75);
+  transition: opacity .14s linear, transform .12s linear;
 }
-
 #shadowImg.on{
-  opacity: .85;
+  opacity: .92;
 }
 
