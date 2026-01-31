@@ -633,3 +633,31 @@ input:focus, select:focus, textarea:focus{
 .ghost-item:last-child{ border-bottom: none; }
 .ghost-meta{ opacity:.65; font-size: 10px; letter-spacing:.10em; margin-top:2px; }
 
+/* =========================
+   LAIN SHADOW APPARITION
+   ========================= */
+
+#shadowImg{
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+
+  opacity: 0;
+  display: block;
+  pointer-events: none;
+
+  z-index: 6; /* ノイズ・ビデオより上、UIより下 */
+  mix-blend-mode: screen;
+  filter: contrast(1.2) brightness(.9);
+
+  transition:
+    opacity .14s linear,
+    transform .12s linear;
+}
+
+#shadowImg.on{
+  opacity: .85;
+}
+
