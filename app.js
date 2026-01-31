@@ -183,10 +183,15 @@ function openEditor(it){
   glitchPulse();
 }
 
-function newEditor(){
+function newEditor(kindOverride = null){
+  const kindValue = kindOverride ?? (
+    getAction()==="counselling" ? "Counselling" :
+    (getAction()==="hidden" && isStandalone() ? INSTALLED_ONLY_KIND : "Note")
+  );
+
   const it = {
     id: null,
-    kind: (getAction()==="counselling" ? "Counselling" : (getAction()==="hidden" && isStandalone() ? INSTALLED_ONLY_KIND : "Note")),
+    kind: kindValue,
     title: "",
     body: "",
     tags: [],
@@ -196,6 +201,7 @@ function newEditor(){
   };
   openEditor(it);
 }
+
 
 
 function getAction(){
@@ -253,9 +259,13 @@ async function saveCurrent(){
   if (!currentUser || !selected) return;
   setStatus("SAVE…");
 
+  // いまの種別（UI上の）を保持したい
+  const keepKindUI = $("#kind").value;
+
   const rawKind = $("#kind").value;
   const rawTags = $("#tags").value.split(",").map(s=>s.trim()).filter(Boolean);
   const mapped = mapHiddenKind(rawKind, rawTags);
+
   const payload = {
     kind: mapped.kind,
     title: $("#title").value.trim(),
@@ -264,6 +274,61 @@ async function saveCurrent(){
     mood: $("#mood").value === "" ? null : Number($("#mood").value),
     user_id: currentUser.id,
   };
+
+  // INSERT
+  if (!selected.id){
+    const { data, error } = await supabase
+      .from("logs")
+      .insert(payload)
+      .select("*")
+      .single();
+
+    if (error){
+      window.WiredAudio?.errorSound();
+      setStatus("ERR: " + error.message);
+      return;
+    }
+
+    window.WiredAudio?.saveSound();
+    window.WiredAudio?.applyMood(payload.mood);
+    setStatus("SAVED (NEW).");
+    glitchPulse();
+
+    // リストだけ更新（表示は新規へ）
+    await fetchLogs();
+
+    // ✅ ここが肝：保存したログを開き直さず、次の新規へ
+    window.WiredAudio?.applyMood(0);
+    newEditor(keepKindUI);
+    return;
+  }
+
+  // UPDATE
+  const { data, error } = await supabase
+    .from("logs")
+    .update(payload)
+    .eq("id", selected.id)
+    .select("*")
+    .single();
+
+  if (error){
+    window.WiredAudio?.errorSound();
+    setStatus("ERR: " + error.message);
+    return;
+  }
+
+  window.WiredAudio?.saveSound();
+  window.WiredAudio?.applyMood(payload.mood);
+  setStatus("SAVED (UPDATE).");
+  glitchPulse();
+
+  await fetchLogs();
+
+  // ✅ 更新でも「次を書く」方向に倒す（あなたの要求に合わせる）
+  window.WiredAudio?.applyMood(0);
+  newEditor(keepKindUI);
+}
+
 
   if (!selected.id){
     const { data, error } = await supabase.from("logs").insert(payload).select("*").single();
