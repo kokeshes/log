@@ -42,6 +42,7 @@
     <div class="top-actions">
       <button id="btnRefresh" class="pill">SYNC</button>
       <a class="pill" href="./static.html">STATIC</a>
+      <button id="btnAudio" class="pill ghost" title="iOS/PWA audio reconnect">AUDIO</button>
       <button id="btnLogout" class="pill danger hidden">LOGOUT</button>
     </div>
   </header>
@@ -110,16 +111,17 @@
             <div class="lain-sub">original appearance</div>
           </div>
         </div>
+
         <div id="ghostBox" class="ghostbox">
           <div class="ghost-title">TRACE // RESIDUAL SIGNAL</div>
           <div id="ghostList" class="ghost-list">
-          <div class="ghost-empty">NO TRACE</div>
+            <div class="ghost-empty">NO TRACE</div>
+          </div>
+          <div class="row" style="margin-top:8px;">
+            <button id="btnGhostClear" class="pill ghost">CLEAR TRACE</button>
+            <button id="btnGhostOpenStatic" class="pill ghost">OPEN STATIC</button>
+          </div>
         </div>
-  <div class="row" style="margin-top:8px;">
-    <button id="btnGhostClear" class="pill ghost">CLEAR TRACE</button>
-    <button id="btnGhostOpenStatic" class="pill ghost">OPEN STATIC</button>
-  </div>
-</div>
 
         <div class="small">
           Tip: more noise for scroll or click<br/>
@@ -198,11 +200,31 @@
     <div id="status" class="footer-right">BOOTING…</div>
   </footer>
 
+  <!-- AUDIO GATE (iOS/PWA audio recovery) -->
+  <div id="audioGate" class="audio-gate hidden" role="dialog" aria-modal="true">
+    <div class="audio-gate-card">
+      <div class="audio-gate-title">AUDIO LOST // TAP TO RECONNECT</div>
+      <div class="audio-gate-sub">
+        iOS/PWA は別の動画・別タブ・ロック復帰後に音が止まることがあります（仕様）。<br/>
+        ここをタップして回線を再同期してください。
+      </div>
+      <div class="audio-gate-actions">
+        <button id="btnAudioReconnect" class="pill danger">RECONNECT</button>
+        <button id="btnAudioReset" class="pill ghost">RESET AUDIO</button>
+        <button id="btnAudioDismiss" class="pill">HIDE</button>
+      </div>
+      <div id="audioState" class="audio-state">state: n/a</div>
+    </div>
+  </div>
+
+  <!-- ✅ audio.js を先に -->
+  <script src="./audio.js"></script>
+
   <script type="module" src="./app.js"></script>
   <script type="module" src="./noise.js"></script>
   <script type="module" src="./crt.js"></script>
   <script type="module" src="./ps1.js"></script>
-  <script src="./audio.js"></script>
+
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js");
