@@ -1,6 +1,8 @@
 /* =========================================================
    STATIC ROOM // THE WIRED
-   full replace static.js (stable + UI scramble + louder audio)
+   full replace static.js
+   - stable + UI toggle + UI scramble
+   - audio: iOS/PWA resilient (resume + soft rebuild)
 ========================================================= */
 
 const $ = (s) => document.querySelector(s);
@@ -251,7 +253,7 @@ addEventListener("resize", resize);
 resize();
 
 /* =========================================================
-   UI scramble (pills + UI)
+   UI scramble
 ========================================================= */
 const SCRAMBLE_CHARS =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_#@$%+*-=<>[]{}" +
@@ -263,10 +265,6 @@ const SCRAMBLE_CHARS =
 const scrambleTargets = Array.from(document.querySelectorAll("[data-scramble='1']"))
   .map(el => ({ el, base: el.textContent }));
 
-/**
- * ✅ UIスクランブル対象は「base固定」だと UI文言が変わったときに戻りが壊れる。
- * なので base を毎回 “その瞬間の textContent” から取得して復帰する。
- */
 function getUIScrambleEls(){
   return Array.from(document.querySelectorAll("[data-ui-scramble='1']"));
 }
@@ -303,7 +301,6 @@ function maybeScramble(intensity){
   }
 }
 
-/* ✅ UI scramble: definitely works if data-ui-scramble exists */
 let uiScrambleCooldown = 0;
 function maybeScrambleUI(intensity){
   const now = performance.now();
@@ -312,11 +309,9 @@ function maybeScrambleUI(intensity){
   const els = getUIScrambleEls();
   if (!els.length) return;
 
-  // “頻度低め + 軽め” でも確実に見えるように少しだけ上げる
-  const chance = 0.010 + intensity * 0.030; // ←ここが「見えない」人は上げてもOK
+  const chance = 0.010 + intensity * 0.030;
   if (Math.random() >= chance) return;
 
-  // snapshot current text (so restore is correct even if labels change)
   const snap = els.map(el => [el, el.textContent]);
 
   const p = 0.03 + intensity * 0.14;
@@ -410,20 +405,23 @@ function triggerShadow(){
   shadowImg.classList.add("on");
 
   if (Math.random() < 0.55) glitchPulse();
-
-  setTimeout(()=>{ shadowImg?.classList.remove("on"); }, 2000);
 }
 
 /* =========================================================
-   audio (wired hiss) - user gesture required
-   ✅ louder + compressor + NO double destination connect
+   AUDIO (iOS/PWA resilient)
+   - resume on gesture
+   - rebuild if "running but silent" suspected
 ========================================================= */
 let audioCtx = null, master = null;
 let noiseSrc = null, noiseGain = null;
 let humOsc = null, humGain = null;
 let filterLP = null, filterHP = null;
 let wobbleOsc = null, wobbleGain = null;
-let comp = null; // compressor
+let comp = null;
+
+let audioPrimed = false;     // user gesture already happened
+let audioBroken = false;     // mark if we suspect broken session
+let lastAudioKickAt = 0;
 
 function makeNoiseBuffer(ac){
   const seconds = 2;
@@ -448,6 +446,7 @@ function makeNoiseBuffer(ac){
 
 function ensureAudio(){
   if (audioCtx) return;
+
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
   master = audioCtx.createGain();
@@ -495,7 +494,6 @@ function ensureAudio(){
   filterHP.connect(filterLP);
   filterLP.connect(master);
 
-  // ✅ compressor (limiter-ish)
   comp = audioCtx.createDynamicsCompressor();
   comp.threshold.value = -20;
   comp.knee.value = 14;
@@ -519,9 +517,7 @@ function applyAudioParams(){
   const vol = Number(aVol?.value ?? 26) / 100;
   const tone = Number(aTone?.value ?? 36) / 100;
 
-  // ✅ louder scaling: up to 1.0
   master.gain.setTargetAtTime(vol * 1.0, audioCtx.currentTime, 0.03);
-
   filterLP.frequency.setTargetAtTime(900 + tone * 5200, audioCtx.currentTime, 0.05);
   filterHP.frequency.setTargetAtTime(60 + (1-tone) * 140, audioCtx.currentTime, 0.05);
 
@@ -532,10 +528,103 @@ function applyAudioParams(){
 aVol?.addEventListener("input", applyAudioParams);
 aTone?.addEventListener("input", applyAudioParams);
 
-btnEnable?.addEventListener("click", async () => {
+// “silent running”対策：極小クリックでオーディオセッションを掴み直す
+function audioKick(){
+  if (!audioCtx || !master) return;
+  const now = performance.now();
+  if (now - lastAudioKickAt < 800) return;
+  lastAudioKickAt = now;
+
+  try{
+    const t0 = audioCtx.currentTime;
+    const click = audioCtx.createOscillator();
+    const cg = audioCtx.createGain();
+    click.type = "square";
+    click.frequency.value = 900 + Math.random()*900;
+    cg.gain.value = 0.0;
+    click.connect(cg); cg.connect(master);
+    click.start(t0);
+    cg.gain.setValueAtTime(0.0, t0);
+    cg.gain.linearRampToValueAtTime(0.03, t0 + 0.004);
+    cg.gain.linearRampToValueAtTime(0.0, t0 + 0.018);
+    click.stop(t0 + 0.03);
+  }catch{}
+}
+
+// ソフト復旧：resume + kick
+async function audioResumeSoft(){
+  try{
+    ensureAudio();
+    if (audioCtx?.state !== "running"){
+      await audioCtx.resume();
+    }
+    applyAudioParams();
+    audioKick();
+    audioBroken = false;
+    return true;
+  }catch(e){
+    console.warn("audioResumeSoft failed", e);
+    audioBroken = true;
+    return false;
+  }
+}
+
+// ハード復旧：いったんclose→作り直し
+async function audioRebuildHard(){
+  try{
+    if (audioCtx){
+      try{ await audioCtx.close(); }catch{}
+    }
+  }catch{}
+  audioCtx = null; master = null;
+  noiseSrc = null; noiseGain = null;
+  humOsc = null; humGain = null;
+  filterLP = null; filterHP = null;
+  wobbleOsc = null; wobbleGain = null;
+  comp = null;
+
   ensureAudio();
   try{ await audioCtx.resume(); }catch{}
+  applyAudioParams();
+  audioKick();
+  audioBroken = false;
+  return true;
+}
+
+// 公開API（他ページ/ボタンからも呼べる）
+window.WiredAudio = window.WiredAudio || {};
+window.WiredAudio.reconnect = async ()=>{
+  const ok = await audioResumeSoft();
+  if (ok) return true;
+  return await audioRebuildHard();
+};
+
+btnEnable?.addEventListener("click", async () => {
+  audioPrimed = true;
+  await window.WiredAudio.reconnect?.();
   if (btnEnable) btnEnable.textContent = "AUDIO READY";
+});
+
+/* ✅ iOS/PWA: どこタップでも復旧（UI要素の上でもOK） */
+["pointerdown","touchstart"].forEach(ev=>{
+  window.addEventListener(ev, async ()=>{
+    // ユーザーが触った＝復旧チャンス
+    if (!audioPrimed) return; // まだ音を使う意思がないなら無駄に起動しない
+    if (audioBroken || (audioCtx && audioCtx.state !== "running")){
+      await window.WiredAudio.reconnect?.();
+    }
+  }, { passive:true });
+});
+
+/* ✅ 復帰時（他動画→戻る）に復旧 */
+document.addEventListener("visibilitychange", async ()=>{
+  if (document.visibilityState === "visible"){
+    if (audioPrimed){
+      // iOSはrunningでも死ぬことがあるのでkickを含む
+      const ok = await audioResumeSoft();
+      if (!ok) await audioRebuildHard();
+    }
+  }
 });
 
 /* =========================================================
@@ -571,7 +660,10 @@ btnToggle?.addEventListener("click", async () => {
 
   if (running){
     burst = Math.max(burst, 0.2);
-    if (audioCtx){ try{ await audioCtx.resume(); }catch{} }
+
+    // ✅ running開始時に音を掴み直す（iOS復旧）
+    audioPrimed = true;
+    await window.WiredAudio.reconnect?.();
 
     const line = injectHorrorText();
     if (line) pushGhostTrace(line);
@@ -636,7 +728,7 @@ function loop(){
         if (Math.random() < 0.45) triggerShadow();
         if (Math.random() < 0.35) glitchPulse();
 
-        // audio wobble + click
+        // audio wobble + click (also helps keep session alive)
         if (audioCtx && humOsc && filterLP && noiseGain && master){
           const t0 = audioCtx.currentTime;
 
@@ -652,19 +744,8 @@ function loop(){
           noiseGain.gain.setTargetAtTime(0.32 + Math.random()*0.18, t0, 0.03);
           noiseGain.gain.setTargetAtTime(0.26, t0 + 0.25, 0.12);
 
-          const click = audioCtx.createOscillator();
-          const cg = audioCtx.createGain();
-          click.type = "square";
-          click.frequency.value = 1200 + Math.random()*800;
-          cg.gain.value = 0.0;
-          click.connect(cg);
-          cg.connect(master);
-
-          click.start(t0);
-          cg.gain.setValueAtTime(0.0, t0);
-          cg.gain.linearRampToValueAtTime(0.08, t0 + 0.005); // slightly louder click
-          cg.gain.linearRampToValueAtTime(0.0, t0 + 0.02);
-          click.stop(t0 + 0.03);
+          // keep-alive click
+          audioKick();
         }
 
         nextHorrorAt = now + (Math.random() < 0.18 ? (180 + Math.random()*420) : (1200 + Math.random()*2800));
