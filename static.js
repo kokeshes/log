@@ -1,17 +1,13 @@
 /* =========================================================
    STATIC ROOM // THE WIRED
-   full replace static.js (stable)
-   - PS1-like noise buffer scale
-   - glitch / blink / shadow
-   - horror text injection (cooldown)
-   - local-only ghost trace (BroadcastChannel + localStorage)
-   - wired hiss audio (enable button required)
+   full replace static.js (stable + UI toggle)
 ========================================================= */
 
 const $ = (s) => document.querySelector(s);
 
 /* ---------- DOM ---------- */
 const badge = $("#diag");
+const uiHint = $("#uiHint");
 
 const canvas = $("#staticCanvas");
 const ctx = canvas?.getContext("2d", { alpha: false });
@@ -20,12 +16,13 @@ const blinkCanvas = $("#blinkLayer");
 const bctx = blinkCanvas?.getContext("2d", { alpha: true });
 
 const bgVideo = $("#bgVideo");     // optional
-const shadowImg = $("#shadowImg"); // optional (img overlay)
+const shadowImg = $("#shadowImg"); // optional
 
 const btnEnable = $("#btnEnable");
 const btnToggle = $("#btnToggle");
 const btnBurst  = $("#btnBurst");
 const btnCalm   = $("#btnCalm");
+const btnUI     = $("#btnUI");
 
 const vIntensity = $("#vIntensity");
 const vGlitch    = $("#vGlitch");
@@ -36,13 +33,53 @@ if (!canvas || !ctx){
   throw new Error("staticCanvas not found or 2D context failed");
 }
 
-/* ---------- small helpers ---------- */
 function logDiag(msg){
   try{
     if (badge) badge.textContent = msg;
     console.log(msg);
   }catch{}
 }
+
+/* =========================================================
+   UI TOGGLE (persist + hint)
+========================================================= */
+const UI_KEY = "wired_static_ui_off_v1";
+
+function hintOnce(){
+  if (!uiHint) return;
+  uiHint.classList.add("on");
+  setTimeout(()=> uiHint.classList.remove("on"), 650);
+}
+
+function setUIOff(off, showHint=false){
+  document.body.classList.toggle("ui-off", !!off);
+  try{ localStorage.setItem(UI_KEY, off ? "1" : "0"); }catch{}
+  if (btnUI) btnUI.textContent = off ? "UI: OFF" : "UI: ON";
+  if (showHint) hintOnce();
+  if (!off) { try{ glitchPulse(); }catch{} }
+}
+
+function getUIOff(){
+  try{ return (localStorage.getItem(UI_KEY) === "1"); }catch{ return false; }
+}
+
+// init
+setUIOff(getUIOff(), false);
+
+btnUI?.addEventListener("click", ()=>{
+  const off = !document.body.classList.contains("ui-off");
+  setUIOff(off, off);
+});
+
+// Keyboard: press "u" to toggle UI
+addEventListener("keydown", (e)=>{
+  if (e.repeat) return;
+  if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+  if (e.key.toLowerCase() === "u"){
+    const off = !document.body.classList.contains("ui-off");
+    setUIOff(off, off);
+  }
+});
 
 /* =========================================================
    GHOST TRACE (local only; NOT saved to Supabase)
@@ -101,10 +138,8 @@ const HORROR_LINES = [
 
 function injectHorrorText(){
   const line = HORROR_LINES[(Math.random() * HORROR_LINES.length) | 0];
-
   if (Math.random() < 0.3) injectIntoUI(line);
   else injectFloatingText(line);
-
   return line;
 }
 
@@ -126,7 +161,7 @@ function injectFloatingText(line){
   div.style.position = "fixed";
   div.style.left = (10 + Math.random()*80) + "vw";
   div.style.top  = (10 + Math.random()*70) + "vh";
-  div.style.zIndex = "5";
+  div.style.zIndex = "999999";
   div.style.pointerEvents = "none";
   div.style.opacity = "0";
   div.style.fontFamily = "ui-monospace, Menlo, Consolas, monospace";
@@ -177,7 +212,7 @@ addEventListener("resize", resize);
 resize();
 
 /* =========================================================
-   UI scramble (optional)
+   UI scramble
 ========================================================= */
 const SCRAMBLE_CHARS =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_#@$%+*-=<>[]{}" +
@@ -390,7 +425,7 @@ function applyAudioParams(){
 aVol?.addEventListener("input", applyAudioParams);
 aTone?.addEventListener("input", applyAudioParams);
 
-Enable?.addEventListener("click", async () => {
+btnEnable?.addEventListener("click", async () => {
   ensureAudio();
   try{ await audioCtx.resume(); }catch{}
   if (btnEnable) btnEnable.textContent = "AUDIO READY";
@@ -402,8 +437,6 @@ Enable?.addEventListener("click", async () => {
 let running = false;
 let burst = 0;
 let tick = 0;
-
-// horror cooldown
 let nextHorrorAt = performance.now() + 2500;
 
 btnBurst?.addEventListener("click", () => {
@@ -430,10 +463,13 @@ btnToggle?.addEventListener("click", async () => {
   }catch{}
 
   if (running){
-     const line = injectHorrorText();
-      if (line) pushGhostTrace(line);
     burst = Math.max(burst, 0.2);
     if (audioCtx){ try{ await audioCtx.resume(); }catch{} }
+
+    // STARTした瞬間に一発（動いてる感）
+    const line = injectHorrorText();
+    if (line) pushGhostTrace(line);
+    nextHorrorAt = performance.now() + 900 + Math.random()*900;
   }
 });
 
@@ -450,7 +486,7 @@ function loop(){
 
   const drift = Math.sin(tick * 0.03) * 1.7;
 
-  // write noise into small buffer
+  // noise into small buffer
   for (let y=0; y<RH; y++){
     const tear = (Math.random() < (0.004 + glitch*0.02)) ? (Math.random()*10-5) : 0;
     const lineDark = ((y + (drift|0)) % 2 === 0) ? 0.86 : 1.0;
@@ -461,7 +497,6 @@ function loop(){
       v = Math.max(0, Math.min(255, v));
 
       if (Math.random() < (0.008 + glitch*0.03)) v = Math.min(255, v + 60);
-
       v *= lineDark;
 
       const tint = 0.02 + inten*0.08;
@@ -478,7 +513,7 @@ function loop(){
     }
   }
 
-  // commit small buffer -> scale up
+  // commit -> scale up
   rctx.putImageData(img, 0, 0);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(rCanvas, 0, 0, W, H);
@@ -486,7 +521,7 @@ function loop(){
   // overlay glitch
   if (Math.random() < (0.01 + glitch*0.06)) glitchPulse();
 
-  // ---- horror injection + trace + audio sync ----
+  // horror injection
   if (running){
     const now = performance.now();
     if (now >= nextHorrorAt){
@@ -530,7 +565,6 @@ function loop(){
           click.stop(t0 + 0.03);
         }
 
-        // next horror timing (sometimes "wave")
         if (Math.random() < 0.18){
           nextHorrorAt = now + 180 + Math.random() * 420;
         } else {
