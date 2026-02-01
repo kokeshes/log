@@ -1,5 +1,5 @@
 /* sw.js (SAFE for iOS PWA + Supabase) */
-const CACHE_NAME = "wired-log-ps1-v6"; // ★更新したら名前を変えると確実に差し替わる
+const CACHE_NAME = "wired-log-ps1-v7"; // ★更新したら名前を変えると確実に差し替わる
 const ASSETS = [
   "./",
   "./index.html",
