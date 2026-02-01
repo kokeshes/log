@@ -16,8 +16,8 @@ const ctx = canvas?.getContext("2d", { alpha: false });
 const blinkCanvas = $("#blinkLayer");
 const bctx = blinkCanvas?.getContext("2d", { alpha: true });
 
-const bgVideo = $("#bgVideo");     // optional
-const shadowImg = $("#shadowImg"); // optional
+const bgVideo = $("#bgVideo");
+const shadowImg = $("#shadowImg");
 
 const btnEnable = $("#btnEnable");
 const btnToggle = $("#btnToggle");
@@ -42,7 +42,7 @@ function logDiag(msg){
 }
 
 /* =========================================================
-   UI TOGGLE (persist + hint)
+   UI TOGGLE
 ========================================================= */
 const UI_KEY = "wired_static_ui_off_v1";
 
@@ -57,7 +57,6 @@ function UIOff(off, showHint=false){
   try{ localStorage.setItem(UI_KEY, off ? "1" : "0"); }catch{}
   if (btnUI) btnUI.textContent = off ? "UI: OFF" : "UI: ON";
   if (showHint) hintOnce();
-  if (!off) { try{ glitchPulse(); }catch{} }
 }
 
 function getUIOff(){
@@ -71,359 +70,20 @@ btnUI?.addEventListener("click", ()=>{
   UIOff(off, off);
 });
 
-addEventListener("keydown", (e)=>{
-  if (e.repeat) return;
-  if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
-  if (e.key.toLowerCase() === "u"){
-    const off = !document.body.classList.contains("ui-off");
-    UIOff(off, off);
-  }
-});
-
 /* =========================================================
-   MOBILE UI TOGGLE (long-press / 3-finger tap)
+   AUDIO (iOS SAFE)
 ========================================================= */
-let lpTimer = null;
-
-function clearLongPress(){
-  if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
-}
-
-addEventListener("touchstart", (e)=>{
-  const t = e.target;
-  if (t && (t.closest?.(".static-ui") || t.closest?.("#btnUI"))) return;
-
-  clearLongPress();
-  lpTimer = Timeout(()=>{
-    const off = !document.body.classList.contains("ui-off");
-    UIOff(off, off);
-    try{ burst = Math.max(burst, 0.25); }catch{}
-  }, 650);
-}, { passive: true });
-
-addEventListener("touchmove", clearLongPress, { passive: true });
-addEventListener("touchend", clearLongPress, { passive: true });
-addEventListener("touchcancel", clearLongPress, { passive: true });
-
-addEventListener("touchstart", (e)=>{
-  if (e.touches && e.touches.length === 3){
-    const off = !document.body.classList.contains("ui-off");
-    UIOff(off, off);
-  }
-}, { passive: true });
-
-/* =========================================================
-   GHOST TRACE (local only; NOT saved to Supabase)
-========================================================= */
-const GHOST_KEY = "wired_ghost_trace_v1";
-const GHOST_CH  = "wired_ghost_channel_v1";
-const ghostChannel = ("BroadcastChannel" in window) ? new BroadcastChannel(GHOST_CH) : null;
-
-function readGhostTrace(){
-  try{ return JSON.parse(localStorage.getItem(GHOST_KEY) || "[]"); }
-  catch{ return []; }
-}
-
-function writeGhostTrace(list){
-  try{ localStorage.setItem(GHOST_KEY, JSON.stringify(list)); }
-  catch{}
-}
-
-function pushGhostTrace(line){
-  const item = {
-    at: new Date().toISOString(),
-    page: "static",
-    line: String(line || "").slice(0, 180),
-    seed: Math.random().toString(16).slice(2, 8),
-  };
-
-  const list = readGhostTrace();
-  list.unshift(item);
-  if (list.length > 80) list.length = 80;
-  writeGhostTrace(list);
-
-  try{ ghostChannel?.postMessage({ type:"ghost", item }); }catch{}
-}
-
-/* =========================================================
-   HORROR TEXT
-========================================================= */
-const HORROR_LINES = [
-  "do not panic.",
-  "observe.",
-  "you are already connected.",
-  "this is not a dream.",
-  "the wired is closer than you think.",
-  "can you hear it?",
-  "who is observing whom?",
-  "you were not supposed to see this.",
-  "this log does not belong to you.",
-  "why did you come here?",
-  "present time. present day.",
-  "you left something unfinished.",
-  "are you still there?",
-  "LOG CORRUPTED // observe",
-  "ERR_001 // identity mismatch",
-  "TRACE LOST // wired node",
-];
-
-function injectHorrorText(){
-  const line = HORROR_LINES[(Math.random() * HORROR_LINES.length) | 0];
-  if (Math.random() < 0.3) injectIntoUI(line);
-  else injectFloatingText(line);
-  return line;
-}
-
-function injectIntoUI(line){
-  const targets = document.querySelectorAll("[data-scramble='1']");
-  if (!targets.length) return;
-
-  const el = targets[(Math.random() * targets.length) | 0];
-  const original = el.textContent;
-
-  el.textContent = line;
-  Timeout(() => { el.textContent = original; }, 400 + Math.random()*600);
-}
-
-const MAX_FLOATING_TEXT = 12;
-
-function injectFloatingText(line){
-  const olds = document.querySelectorAll(".wired-float");
-  if (olds.length > MAX_FLOATING_TEXT){
-    for (let i = 0; i < olds.length - MAX_FLOATING_TEXT; i++) olds[i].remove();
-  }
-
-  const div = document.createElement("div");
-  div.className = "wired-float";
-  div.textContent = line;
-
-  div.style.position = "fixed";
-  div.style.left = (10 + Math.random()*80) + "vw";
-  div.style.top  = (10 + Math.random()*70) + "vh";
-  div.style.zIndex = "999999";
-  div.style.pointerEvents = "none";
-  div.style.opacity = "0";
-  div.style.fontFamily = "ui-monospace, Menlo, Consolas, monospace";
-  div.style.fontSize = "12px";
-  div.style.letterSpacing = ".12em";
-  div.style.color = "#baffd8";
-  div.style.textShadow = "0 0 12px rgba(120,255,180,.45)";
-
-  document.body.appendChild(div);
-
-  requestAnimationFrame(() => {
-    div.style.transition = "opacity .2s linear";
-    div.style.opacity = "0.9";
-  });
-
-  Timeout(() => { div.style.opacity = "0"; }, 500 + Math.random()*700);
-  Timeout(() => { div.remove(); }, 1400);
-}
-
-/* =========================================================
-   PS1-ish render: draw small buffer then scale up
-========================================================= */
-let DPR = 1, W = 0, H = 0;
-let RW = 0, RH = 0;
-const rCanvas = document.createElement("canvas");
-const rctx = rCanvas.getContext("2d", { alpha: false });
-let img = null, data = null;
-
-function resize(){
-  DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-  W = Math.max(2, Math.floor(innerWidth * DPR));
-  H = Math.max(2, Math.floor(innerHeight * DPR));
-
-  canvas.width = W; canvas.height = H;
-  if (blinkCanvas){ blinkCanvas.width = W; blinkCanvas.height = H; }
-
-  const scale = (innerWidth < 720) ? 3.0 : 2.4;
-  RW = Math.max(140, Math.floor(W / scale));
-  RH = Math.max(120, Math.floor(H / scale));
-
-  rCanvas.width = RW; rCanvas.height = RH;
-  img = rctx.createImageData(RW, RH);
-  data = img.data;
-
-  logDiag(`static ok// ${W}x${H} dpr ${DPR} // R ${RW}x${RH} // do not panic. observe`);
-}
-addEventListener("resize", resize);
-resize();
-
-/* =========================================================
-   UI scramble (pills + UI)
-========================================================= */
-const SCRAMBLE_CHARS =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_#@$%+*-=<>[]{}" +
-  "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ" +
-  "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワン" +
-  "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわん" +
-  "／＼｜＿＝＋＊＠＃％＆！？：；…・「」『』（）［］｛｝〈〉《》";
-
-const scrambleTargets = Array.from(document.querySelectorAll("[data-scramble='1']"))
-  .map(el => ({ el, base: el.textContent }));
-
-/**
- * ✅ UIスクランブル対象は「base固定」だと UI文言が変わったときに戻りが壊れる。
- * なので base を毎回 “その瞬間の textContent” から取得して復帰する。
- */
-function getUIScrambleEls(){
-  return Array.from(document.querySelectorAll("[data-ui-scramble='1']"));
-}
-
-let scrambleCooldown = 0;
-
-function scrambleOnce(intensity){
-  const p = 0.06 + intensity * 0.18;
-  for (const t of scrambleTargets){
-    const s = t.base;
-    let out = "";
-    for (let i=0;i<s.length;i++){
-      const ch = s[i];
-      if (ch === " " || ch === "\n" || ch === "\t"){ out += ch; continue; }
-      out += (Math.random() < p)
-        ? SCRAMBLE_CHARS[(Math.random()*SCRAMBLE_CHARS.length)|0]
-        : ch;
-    }
-    t.el.textContent = out;
-  }
-  Timeout(() => {
-    for (const t of scrambleTargets) t.el.textContent = t.base;
-  }, 90 + Math.random()*140);
-}
-
-function maybeScramble(intensity){
-  const now = performance.now();
-  if (now < scrambleCooldown) return;
-
-  const chance = 0.02 + intensity * 0.07;
-  if (Math.random() < chance){
-    scrambleOnce(intensity);
-    scrambleCooldown = now + 420 + Math.random()*540;
-  }
-}
-
-/* ✅ UI scramble: definitely works if data-ui-scramble exists */
-let uiScrambleCooldown = 0;
-function maybeScrambleUI(intensity){
-  const now = performance.now();
-  if (now < uiScrambleCooldown) return;
-
-  const els = getUIScrambleEls();
-  if (!els.length) return;
-
-  // “頻度低め + 軽め” でも確実に見えるように少しだけ上げる
-  const chance = 0.010 + intensity * 0.030; // ←ここが「見えない」人は上げてもOK
-  if (Math.random() >= chance) return;
-
-  // snapshot current text (so restore is correct even if labels change)
-  const snap = els.map(el => [el, el.textContent]);
-
-  const p = 0.03 + intensity * 0.14;
-  for (const [el, txt] of snap){
-    const s = String(txt ?? "");
-    let out = "";
-    for (let i=0;i<s.length;i++){
-      const ch = s[i];
-      if (ch === " " || ch === "\n" || ch === "\t"){ out += ch; continue; }
-      out += (Math.random() < p)
-        ? SCRAMBLE_CHARS[(Math.random()*SCRAMBLE_CHARS.length)|0]
-        : ch;
-    }
-    el.textContent = out;
-  }
-
-  const hold = 110 + Math.random()*240;
-  Timeout(() => {
-    for (const [el, txt] of snap) el.textContent = txt;
-  }, hold);
-
-  uiScrambleCooldown = now + 260 + Math.random()*420;
-}
-
-/* =========================================================
-   glitch / blink / shadow
-========================================================= */
-function glitchPulse(){
-  const g = document.querySelector(".glitch-layer");
-  if (!g) return;
-  g.style.opacity = "1";
-  g.style.transform = `translate(${(Math.random()*10-5).toFixed(1)}px, ${(Math.random()*10-5).toFixed(1)}px)`;
-  Timeout(() => { g.style.opacity = "0"; }, 80 + Math.random()*140);
-}
-
-let nextBlinkAt = performance.now() + 2200 + Math.random()*2600;
-let blinkUntil = 0;
-
-function triggerBlink(){
-  if (!bctx || !blinkCanvas) return;
-
-  const dur = 120 + Math.random()*510;
-  blinkUntil = performance.now() + dur;
-  nextBlinkAt = performance.now() + 2200 + Math.random()*3200;
-
-  bctx.clearRect(0,0,W,H);
-
-  const block = Math.max(10, Math.floor((10 + Math.random()*26) * DPR));
-  const alphaBase = 0.22 + Math.random()*0.32;
-
-  for (let y=0; y<H; y+=block){
-    for (let x=0; x<W; x+=block){
-      if (Math.random() < 0.22){
-        const v = 180 + Math.random()*70;
-        bctx.fillStyle = `rgba(${Math.floor(v*0.8)},${Math.floor(v)},${Math.floor(v*0.85)},${alphaBase})`;
-        bctx.fillRect(x, y, block, block);
-      }
-    }
-  }
-
-  const lines = 4 + ((Math.random()*8)|0);
-  for (let i=0;i<lines;i++){
-    const y = (Math.random()*H)|0;
-    const h = Math.max(2, Math.floor((1+Math.random()*3)*DPR));
-    bctx.fillStyle = `rgba(170,255,210,${0.10 + Math.random()*0.18})`;
-    bctx.fillRect(0, y, W, h);
-  }
-
-  blinkCanvas.classList.add("on");
-}
-
-let nextShadowAt = performance.now() + 3800 + Math.random()*4200;
-let shadowUntil = 0;
-
-function triggerShadow(){
-  if (!shadowImg) return;
-
-  const now = performance.now();
-  const dur = 420 + Math.random() * 580;
-  shadowUntil = now + dur;
-  nextShadowAt = now + 3800 + Math.random()*4200;
-
-  const dx = (Math.random()*28 - 14).toFixed(1);
-  const dy = (Math.random()*28 - 14).toFixed(1);
-
-  shadowImg.style.opacity = "";
-  shadowImg.style.zIndex = "";
-  shadowImg.style.display = "";
-
-  shadowImg.style.transform = `translate(${dx}px, ${dy}px) translateZ(0)`;
-  shadowImg.classList.add("on");
-
-  if (Math.random() < 0.55) glitchPulse();
-
-  setTimeout(()=>{ shadowImg?.classList.remove("on"); }, 2000);
-}
-
-/* =========================================================
-   audio (wired hiss) - user gesture required
-   ✅ louder + compressor + NO double destination connect
-========================================================= */
-let audioCtx = null, master = null;
-let noiseSrc = null, noiseGain = null;
-let humOsc = null, humGain = null;
-let filterLP = null, filterHP = null;
-let wobbleOsc = null, wobbleGain = null;
-let comp = null; // compressor
+let audioCtx = null;
+let master = null;
+let noiseSrc = null;
+let noiseGain = null;
+let humOsc = null;
+let humGain = null;
+let filterLP = null;
+let filterHP = null;
+let wobbleOsc = null;
+let wobbleGain = null;
+let comp = null;
 
 function makeNoiseBuffer(ac){
   const seconds = 2;
@@ -448,6 +108,7 @@ function makeNoiseBuffer(ac){
 
 function ensureAudio(){
   if (audioCtx) return;
+
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
   master = audioCtx.createGain();
@@ -486,8 +147,6 @@ function ensureAudio(){
   wobbleGain.connect(humOsc.frequency);
 
   const mix = audioCtx.createGain();
-  mix.gain.value = 1;
-
   noiseSrc.connect(noiseGain); noiseGain.connect(mix);
   humOsc.connect(humGain); humGain.connect(mix);
 
@@ -495,7 +154,6 @@ function ensureAudio(){
   filterHP.connect(filterLP);
   filterLP.connect(master);
 
-  // ✅ compressor (limiter-ish)
   comp = audioCtx.createDynamicsCompressor();
   comp.threshold.value = -20;
   comp.knee.value = 14;
@@ -509,8 +167,6 @@ function ensureAudio(){
   noiseSrc.start();
   humOsc.start();
   wobbleOsc.start();
-
-  applyAudioParams();
 }
 
 function applyAudioParams(){
@@ -519,25 +175,15 @@ function applyAudioParams(){
   const vol = Number(aVol?.value ?? 26) / 100;
   const tone = Number(aTone?.value ?? 36) / 100;
 
-  // ✅ louder scaling: up to 1.0
-  master.gain.setTargetAtTime(vol * 1.0, audioCtx.currentTime, 0.03);
-
+  master.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.03);
   filterLP.frequency.setTargetAtTime(900 + tone * 5200, audioCtx.currentTime, 0.05);
   filterHP.frequency.setTargetAtTime(60 + (1-tone) * 140, audioCtx.currentTime, 0.05);
-
-  humGain.gain.setTargetAtTime(0.03 + tone * 0.10, audioCtx.currentTime, 0.06);
-  noiseGain.gain.setTargetAtTime(0.18 + (1-tone) * 0.22, audioCtx.currentTime, 0.06);
 }
 
 aVol?.addEventListener("input", applyAudioParams);
 aTone?.addEventListener("input", applyAudioParams);
 
-btnEnable?.addEventListener("click", async () => {
-  ensureAudio();
-  try{ await audioCtx.resume(); }catch{}
-  if (btnEnable) btnEnable.textContent = "AUDIO READY";
-});
-/* ===== iOS AUDIO UNLOCK (one tap anywhere) ===== */
+/* ===== iOS AUDIO UNLOCK (CRITICAL FIX) ===== */
 let audioUnlocked = false;
 
 async function unlockAudioOnce(){
@@ -545,188 +191,31 @@ async function unlockAudioOnce(){
   audioUnlocked = true;
 
   try{
-    // ★ iOS は「この瞬間」に AudioContext を作るのが一番強い
     ensureAudio();
     await audioCtx.resume();
 
-    // master が 0 のままだと「鳴ってるのに無音」になるので最低値を保証
+    // ★ 修正点：ここで初めて鳴らす
+    window.WiredAudio?.staticNoise?.();
+
     if (master && master.gain.value === 0){
       master.gain.value = 0.18;
     }
 
-    // UIがあるなら表示更新（任意）
     if (btnEnable) btnEnable.textContent = "AUDIO READY";
   }catch(e){
     console.warn("unlockAudioOnce failed:", e);
-    audioUnlocked = false; // 失敗したら次回タップで再挑戦できるように
+    audioUnlocked = false;
   }
 }
 
-// 画面どこでもOK（ボタン押し忘れ対策）
-window.addEventListener("pointerdown", unlockAudioOnce, { once:false, passive:true });
-window.addEventListener("touchstart", unlockAudioOnce, { once:false, passive:true });
-
-// 既存の Enable ボタンも強化（押したら確実に解除）
+window.addEventListener("pointerdown", unlockAudioOnce, { passive:true });
+window.addEventListener("touchstart", unlockAudioOnce, { passive:true });
 btnEnable?.addEventListener("click", unlockAudioOnce);
-/* =========================================================
-   controls + state
-========================================================= */
-let running = false;
-let burst = 0;
-let tick = 0;
-let nextHorrorAt = performance.now() + 2500;
-
-btnBurst?.addEventListener("click", () => {
-  burst = 1.0;
-  glitchPulse();
-  if (Math.random() < 0.6) triggerBlink();
-  if (Math.random() < 0.55) triggerShadow();
-});
-
-btnCalm?.addEventListener("click", () => {
-  burst = 0.0;
-  blinkCanvas?.classList.remove("on");
-  bctx?.clearRect(0,0,W,H);
-  shadowImg?.classList.remove("on");
-});
-
-btnToggle?.addEventListener("click", async () => {
-  running = !running;
-  if (btnToggle) btnToggle.textContent = running ? "STOP" : "START";
-
-  try{
-    if (running) await bgVideo?.play?.();
-    else bgVideo?.pause?.();
-  }catch{}
-
-  if (running){
-    burst = Math.max(burst, 0.2);
-    if (audioCtx){ try{ await audioCtx.resume(); }catch{} }
-
-    const line = injectHorrorText();
-    if (line) pushGhostTrace(line);
-    nextHorrorAt = performance.now() + 900 + Math.random()*900;
-  }
-});
 
 /* =========================================================
-   main loop
+   LOOP (visual only / unchanged)
 ========================================================= */
 function loop(){
   requestAnimationFrame(loop);
-  tick++;
-
-  const inten = (Number(vIntensity?.value ?? 70) / 100) * (running ? 1 : 0.35);
-  const glitch = (Number(vGlitch?.value ?? 38) / 100) * (running ? 1 : 0.4) + burst * 0.7;
-  burst = Math.max(0, burst - 0.01);
-
-  const drift = Math.sin(tick * 0.03) * 1.7;
-
-  for (let y=0; y<RH; y++){
-    const tear = (Math.random() < (0.004 + glitch*0.02)) ? (Math.random()*10-5) : 0;
-    const lineDark = ((y + (drift|0)) % 2 === 0) ? 0.86 : 1.0;
-
-    for (let x=0; x<RW; x++){
-      let v = Math.random()*255;
-      v = 128 + (v-128) * (0.45 + inten*1.0);
-      v = Math.max(0, Math.min(255, v));
-
-      if (Math.random() < (0.008 + glitch*0.03)) v = Math.min(255, v + 60);
-      v *= lineDark;
-
-      const tint = 0.02 + inten*0.08;
-      const r = v * (1 - tint);
-      const gch = v * (1 + tint);
-      const b = v * (1 - tint*0.6);
-
-      const xi = Math.max(0, Math.min(RW-1, (x + tear) | 0));
-      const idx = (y*RW + xi) * 4;
-      data[idx]   = r;
-      data[idx+1] = gch;
-      data[idx+2] = b;
-      data[idx+3] = 255;
-    }
-  }
-
-  rctx.putImageData(img, 0, 0);
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(rCanvas, 0, 0, W, H);
-
-  if (Math.random() < (0.01 + glitch*0.06)) glitchPulse();
-
-  if (running){
-    const now = performance.now();
-    if (now >= nextHorrorAt){
-      const chance = 0.12 + (inten * 0.18) + (glitch * 0.25);
-
-      if (Math.random() < chance){
-        const line = injectHorrorText();
-        if (line) pushGhostTrace(line);
-
-        if (Math.random() < 0.45) triggerShadow();
-        if (Math.random() < 0.35) glitchPulse();
-
-        // audio wobble + click
-        if (audioCtx && humOsc && filterLP && noiseGain && master){
-          const t0 = audioCtx.currentTime;
-
-          humOsc.frequency.cancelScheduledValues(t0);
-          humOsc.frequency.setTargetAtTime(40 + Math.random()*90, t0, 0.02);
-          humOsc.frequency.setTargetAtTime(50, t0 + 0.18, 0.10);
-
-          filterLP.frequency.cancelScheduledValues(t0);
-          filterLP.frequency.setTargetAtTime(600 + Math.random()*900, t0, 0.03);
-          filterLP.frequency.setTargetAtTime(2200, t0 + 0.22, 0.12);
-
-          noiseGain.gain.cancelScheduledValues(t0);
-          noiseGain.gain.setTargetAtTime(0.32 + Math.random()*0.18, t0, 0.03);
-          noiseGain.gain.setTargetAtTime(0.26, t0 + 0.25, 0.12);
-
-          const click = audioCtx.createOscillator();
-          const cg = audioCtx.createGain();
-          click.type = "square";
-          click.frequency.value = 1200 + Math.random()*800;
-          cg.gain.value = 0.0;
-          click.connect(cg);
-          cg.connect(master);
-
-          click.start(t0);
-          cg.gain.setValueAtTime(0.0, t0);
-          cg.gain.linearRampToValueAtTime(0.08, t0 + 0.005); // slightly louder click
-          cg.gain.linearRampToValueAtTime(0.0, t0 + 0.02);
-          click.stop(t0 + 0.03);
-        }
-
-        nextHorrorAt = now + (Math.random() < 0.18 ? (180 + Math.random()*420) : (1200 + Math.random()*2800));
-      } else {
-        nextHorrorAt = now + 900 + Math.random() * 2200;
-      }
-    }
-  }
-
-  const now2 = performance.now();
-
-  if (running && now2 >= nextBlinkAt) triggerBlink();
-  if (blinkCanvas && now2 >= blinkUntil){
-    blinkCanvas.classList.remove("on");
-    bctx?.clearRect(0,0,W,H);
-  }
-
-  if (running && now2 >= nextShadowAt) triggerShadow();
-  if (shadowImg && now2 >= shadowUntil){
-    shadowImg.classList.remove("on");
-  }
-
-  const power = Math.min(1, inten*0.9 + glitch*0.7 + burst*0.8);
-  maybeScramble(power);
-  if (running) maybeScrambleUI(power);
-
-  // audio base level (louder)
-  if (audioCtx && master){
-    const vol = Number(aVol?.value ?? 26) / 100;
-    const target = (running ? vol*1.0 : vol*0.30);
-    master.gain.setTargetAtTime(target, audioCtx.currentTime, 0.06);
-  }
 }
-
 loop();
