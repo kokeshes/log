@@ -38,17 +38,9 @@ function isAbortError(e){
     || String(e?.message || "").toLowerCase().includes("aborted");
 }
 
-function isLikelyMaintenance(e){
-  // Supabase側メンテや一時障害だと 502/503/504 系が混ざることがある
-  const m = String(e?.message || "").toLowerCase();
-  return m.includes("503") || m.includes("service unavailable") || m.includes("maintenance");
-}
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
-const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
-
-function sb(){
-  return getSupabase();
-}
+function sb(){ return getSupabase(); }
 
 /* ========= BOOT ========= */
 (function bootSequence(){
@@ -71,8 +63,8 @@ const btnNew     = $("#btnNew");
 const emailEl = $("#email");
 const passEl  = $("#password");
 
-const listEl   = $("#list");
-const editorEl = $("#editor");
+const listEl    = $("#list");
+const editorEl  = $("#editor");
 const editorTpl = $("#editorTpl");
 
 const kindFilterEl = $("#kindFilter");
@@ -80,8 +72,9 @@ const qEl = $("#q");
 
 /* ========= state ========= */
 let currentUser = null;
-let selected = null;
-let cache = [];
+let selected = null;   // current editor item (object)
+let cache = [];        // logs
+let authListenerBound = false;
 
 /* ========= connectivity ========= */
 addEventListener("offline", ()=>{
@@ -118,6 +111,7 @@ function uiSignedIn(user){
   navBox?.classList.remove("hidden");
   btnLogout?.classList.remove("hidden");
   editorEl?.classList.remove("locked");
+
   if (whoEmail) whoEmail.textContent = user.email ?? "(unknown)";
 }
 
@@ -173,8 +167,8 @@ function applyDraftIfAny(){
   const bodyEl = $("#body");
   if (!bodyEl) return;
 
-  const hasDraftText = String(d.body || "").length > 0;
-  if (!hasDraftText) return;
+  // draft本文があるなら復元（確実に守る）
+  if (!String(d.body || "").length) return;
 
   $("#kind").value  = d.kind ?? $("#kind").value;
   $("#title").value = d.title ?? $("#title").value;
@@ -188,40 +182,17 @@ function applyDraftIfAny(){
 
 let draftTimer = 0;
 function hookDraftAutosave(){
-  const root = editorEl;
-  if (!root) return;
-  if (root.dataset.draftHooked === "1") return;
-  root.dataset.draftHooked = "1";
+  if (!editorEl) return;
 
-  root.addEventListener("input", ()=>{
+  // editorElは毎回innerHTMLを作り直すので dataset を使って二重登録を防ぐ
+  if (editorEl.dataset.draftHooked === "1") return;
+  editorEl.dataset.draftHooked = "1";
+
+  editorEl.addEventListener("input", ()=>{
     window.clearTimeout(draftTimer);
     draftTimer = window.setTimeout(()=>saveDraftNow(), 260);
   }, { passive: true });
 }
-
-/* ========= session ========= */
-async function getSessionUser(){
-  const { data, error } = await sb().auth.getSession();
-  if (error) throw error;
-  const user = data?.session?.user || null;
-  return user;
-}
-
-async function ensureUserOrThrow(){
-  const user = await getSessionUser();
-  if (!user) throw new Error("SESSION EXPIRED");
-  currentUser = user;
-  return user;
-}
-
-// 画面復帰時に軽く回復させる（iOS/PC両方で効く）
-document.addEventListener("visibilitychange", async ()=>{
-  if (document.visibilityState !== "visible") return;
-  try{
-    // refreshSessionは失敗することもあるが、tryだけしておく
-    await sb().auth.refreshSession();
-  }catch{}
-});
 
 /* ========= auth ========= */
 async function login(){
@@ -235,6 +206,7 @@ async function login(){
 
     glitchPulse();
     await onSession(data.session);
+
   }catch(e){
     console.error(e);
     setStatus("ERR: " + (e?.message ?? "LOGIN FAILED"));
@@ -293,6 +265,7 @@ function renderList(items){
   for (const it of items){
     const div = document.createElement("div");
     div.className = "item";
+    div.dataset.id = it.id;
 
     const preview = (it.body || "").replace(/\s+/g," ").slice(0,120);
     const tags = (it.tags||[])
@@ -305,13 +278,30 @@ function renderList(items){
       <div class="t">${escapeHtml(it.title || "(no title)")}</div>
       <div class="m">${escapeHtml(preview)}</div>
       <div class="d">
-        <span class="badge">${it.created_at ? new Date(it.created_at).toLocaleString() : "-"}</span>
+        <span class="badge">${new Date(it.created_at).toLocaleString()}</span>
         ${tags}
       </div>
     `;
     div.addEventListener("click", ()=> openEditor(it));
     listEl.appendChild(div);
   }
+}
+
+/* ========= session keep-alive ========= */
+async function softRefreshSession(){
+  try{
+    await sb().auth.refreshSession();
+  }catch{
+    // ignore (maintenance/offline/etc)
+  }
+}
+
+async function ensureSessionOrThrow(){
+  const { data, error } = await sb().auth.getSession();
+  if (error) throw error;
+  if (!data?.session) throw new Error("SESSION EXPIRED");
+  currentUser = data.session.user;
+  return data.session;
 }
 
 /* ========= data ========= */
@@ -321,35 +311,18 @@ async function fetchLogs({ retry = 2 } = {}){
   setStatus("SYNC…");
 
   try{
-    // 1) セッションが生きてるか
-    await ensureUserOrThrow();
+    // 放置復帰対策（失敗しても続行）
+    await softRefreshSession();
 
-    // 2) まず “絞らず”に叩く（RLSで勝手に絞られる前提）
-    let q = sb()
+    const { data, error } = await sb()
       .from("logs")
       .select("*")
       .order("created_at", { ascending:false })
       .limit(300);
 
-    const { data, error } = await q;
     if (error) throw error;
 
     cache = data || [];
-
-    // 3) もし0件なら “user_idで明示的に絞る” でも試す（設計が user_id 必須の場合がある）
-    if (cache.length === 0){
-      const { data: data2, error: error2 } = await sb()
-        .from("logs")
-        .select("*")
-        .eq("user_id", currentUser.id)
-        .order("created_at", { ascending:false })
-        .limit(300);
-
-      if (!error2 && Array.isArray(data2) && data2.length > 0){
-        cache = data2;
-      }
-    }
-
     renderList(filteredList());
     setStatus(`SYNC OK // ${cache.length} logs`);
     return;
@@ -357,20 +330,16 @@ async function fetchLogs({ retry = 2 } = {}){
   }catch(e){
     console.error(e);
 
-    if (isLikelyMaintenance(e)){
-      setStatus("SUPABASE MAINTENANCE? // RETRY LATER");
-      return;
-    }
-
     if (isAbortError(e) && retry > 0){
       setStatus("SYNC ABORTED // RETRY");
-      await sleep(350);
+      await sleep(260);
       return fetchLogs({ retry: retry - 1 });
     }
 
-    if (String(e?.message || "").includes("SESSION EXPIRED")){
-      setStatus("SESSION LOST // RELOGIN");
-      uiSignedOut();
+    // maintenanceっぽい時に分かりやすく
+    const msg = String(e?.message || "");
+    if (msg.toLowerCase().includes("maintenance")){
+      setStatus("SUPABASE MAINTENANCE // WAIT");
       return;
     }
 
@@ -387,6 +356,8 @@ function openEditor(it){
 
   editorEl.innerHTML = "";
   editorEl.appendChild(editorTpl.content.cloneNode(true));
+
+  // editorEl再生成につきフック解除→再付与
   editorEl.dataset.draftHooked = "0";
 
   $("#kind").value  = it.kind ?? "Note";
@@ -394,6 +365,15 @@ function openEditor(it){
   $("#tags").value  = (it.tags||[]).join(", ");
   $("#mood").value  = (it.mood ?? "");
   $("#body").value  = it.body ?? "";
+
+  // meta
+  const meta = $("#metaLine");
+  if (meta){
+    const id = it.id ?? "-";
+    const c = it.created_at ? new Date(it.created_at).toLocaleString() : "-";
+    const u = it.updated_at ? new Date(it.updated_at).toLocaleString() : "-";
+    meta.textContent = `id ${id} // created ${c} // updated ${u}`;
+  }
 
   $("#btnSave").onclick = ()=>saveCurrent({ retry: 2 });
   $("#btnDelete").onclick = deleteCurrent;
@@ -407,13 +387,14 @@ function openEditor(it){
 
 function newEditor(kind="Note"){
   openEditor({
-    id:null,
+    id: null,
     kind,
-    title:"",
-    body:"",
-    tags:[],
-    mood:null,
-    created_at: new Date().toISOString()
+    title: "",
+    body: "",
+    tags: [],
+    mood: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   });
 }
 
@@ -422,7 +403,15 @@ async function saveCurrent({ retry = 2 } = {}){
   try{
     setStatus("SAVE…");
 
-    await ensureUserOrThrow();
+    // SAVE前に必ず下書き保存（守る）
+    saveDraftNow();
+
+    // 放置復帰対策（失敗しても続行）
+    await softRefreshSession();
+
+    // session保証（切れてたらここで止める）
+    await ensureSessionOrThrow();
+
     if (!selected) throw new Error("EDITOR STATE LOST");
 
     const payload = {
@@ -431,9 +420,10 @@ async function saveCurrent({ retry = 2 } = {}){
       body:  ($("#body")?.value ?? ""),
       tags:  ($("#tags")?.value ?? "").split(",").map(s=>s.trim()).filter(Boolean),
       mood:  ($("#mood")?.value ?? "") === "" ? null : Number($("#mood")?.value),
-      user_id: currentUser.id
+      user_id: currentUser.id,
     };
 
+    // INSERT / UPDATE
     if (!selected.id){
       const { error } = await sb().from("logs").insert(payload);
       if (error) throw error;
@@ -442,33 +432,38 @@ async function saveCurrent({ retry = 2 } = {}){
       if (error) throw error;
     }
 
+    // 成功したら draft を消す
     clearDraft();
+
     try{ window.WiredAudio?.saveSound?.(); }catch{}
-
     await fetchLogs({ retry: 2 });
-    newEditor(payload.kind);
 
+    // 次のログへ（kind維持）
+    newEditor(payload.kind);
     setStatus("READY // NEXT LOG");
     glitchPulse();
 
   }catch(e){
     console.error(e);
 
-    if (isLikelyMaintenance(e)){
-      setStatus("SUPABASE MAINTENANCE? // SAVE BLOCKED");
-      alert("Supabase側がメンテ/不調の可能性があります。\n本文は下書きに保存されています。\n復旧後にもう一度 SAVE してください。");
-      return;
-    }
-
     if (isAbortError(e) && retry > 0){
       setStatus("SAVE ABORTED // RETRY");
-      await sleep(350);
+      await sleep(260);
       return saveCurrent({ retry: retry - 1 });
     }
 
     if (String(e?.message || "").includes("SESSION EXPIRED")){
       setStatus("SESSION LOST // RELOGIN");
+      try{ window.WiredAudio?.errorSound?.(); }catch{}
       alert("セッションが切れています。再ログインしてください。\n（本文は下書きとして保持されています）");
+      return;
+    }
+
+    // maintenanceっぽい時
+    const msg = String(e?.message || "");
+    if (msg.toLowerCase().includes("maintenance")){
+      setStatus("SUPABASE MAINTENANCE // WAIT");
+      alert("Supabaseがメンテ中の可能性があります。\n（本文は下書きとして保持されています）");
       return;
     }
 
@@ -485,7 +480,8 @@ async function deleteCurrent(){
   setStatus("DELETE…");
 
   try{
-    await ensureUserOrThrow();
+    await softRefreshSession();
+    await ensureSessionOrThrow();
 
     const { error } = await sb().from("logs").delete().eq("id", selected.id);
     if (error) throw error;
@@ -493,12 +489,18 @@ async function deleteCurrent(){
     clearDraft();
     await fetchLogs({ retry: 2 });
     newEditor();
-
     setStatus("DELETED.");
     glitchPulse();
 
   }catch(e){
     console.error(e);
+
+    if (isAbortError(e)){
+      setStatus("DELETE ABORTED // RETRY");
+      alert("通信が一時的に切断されました。もう一度DELETEしてください。");
+      return;
+    }
+
     setStatus("ERR: " + (e?.message ?? "DELETE FAILED"));
     try{ window.WiredAudio?.errorSound?.(); }catch{}
   }
@@ -518,10 +520,19 @@ async function onSession(session){
 }
 
 /* ========= events ========= */
-btnLogin?.addEventListener("click", ()=>login());
-btnSignup?.addEventListener("click", ()=>signup());
-btnLogout?.addEventListener("click", ()=>logout());
-btnRefresh?.addEventListener("click", ()=>fetchLogs({ retry: 2 }));
+btnLogin?.addEventListener("click", ()=>{
+  try{ window.WiredAudio?.resumeAudio?.(); }catch{}
+  login();
+});
+
+btnSignup?.addEventListener("click", signup);
+btnLogout?.addEventListener("click", logout);
+
+btnRefresh?.addEventListener("click", ()=>{
+  glitchPulse();
+  fetchLogs({ retry: 2 });
+});
+
 btnNew?.addEventListener("click", ()=>{
   glitchPulse();
   const k = $("#kind")?.value || "Note";
@@ -535,27 +546,25 @@ qEl?.addEventListener("input", ()=> renderList(filteredList()));
 setStatus("BOOT…");
 showOfflineBanner(!navigator.onLine);
 
+// 初期：セッション確認→UI反映
 try{
-  const user = await getSessionUser();
-  if (!user){
-    uiSignedOut();
-    setStatus("AUTH REQUIRED // CONNECT TO WIRED");
-  }else{
-    currentUser = user;
-    uiSignedIn(user);
-    await fetchLogs({ retry: 2 });
-    newEditor();
-  }
+  const { data } = await sb().auth.getSession();
+  setStatus("BOOT CHECK // session=" + (data?.session ? "YES" : "NO"));
+  await onSession(data.session);
 }catch(e){
   console.error(e);
   uiSignedOut();
   setStatus("AUTH REQUIRED // CONNECT TO WIRED");
 }
 
-// auth state updates
-sb().auth.onAuthStateChange((_event, session)=>{
-  onSession(session);
-});
+// onAuthStateChange は1回だけ
+if (!authListenerBound){
+  authListenerBound = true;
+  sb().auth.onAuthStateChange((_event, session)=>{
+    // awaitできないのでそのまま
+    onSession(session);
+  });
+}
 
 // keep alive（軽量）
 setInterval(async ()=>{
