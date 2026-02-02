@@ -1,5 +1,5 @@
 // docs/app.js
-import { getSupabase } from "./supabase.js";
+import { supabase } from "./supabase.js";
 
 /* ========= helpers ========= */
 const $ = (s) => document.querySelector(s);
@@ -19,8 +19,7 @@ function glitchPulse(){
   const g = document.querySelector(".glitch-layer");
   if (!g) return;
   g.style.opacity = "1";
-  g.style.transform =
-    `translate(${(Math.random()*6-3).toFixed(1)}px, ${(Math.random()*6-3).toFixed(1)}px)`;
+  g.style.transform = `translate(${(Math.random()*6-3).toFixed(1)}px, ${(Math.random()*6-3).toFixed(1)}px)`;
   setTimeout(()=>{ g.style.opacity = "0"; }, 120);
 }
 
@@ -34,13 +33,10 @@ function escapeHtml(s){
 }
 
 function isAbortError(e){
-  return e?.name === "AbortError"
-    || String(e?.message || "").toLowerCase().includes("aborted");
+  return e?.name === "AbortError" || String(e?.message || "").toLowerCase().includes("aborted");
 }
 
 function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
-
-function sb(){ return getSupabase(); }
 
 /* ========= BOOT ========= */
 (function bootSequence(){
@@ -72,9 +68,8 @@ const qEl = $("#q");
 
 /* ========= state ========= */
 let currentUser = null;
-let selected = null;   // current editor item (object)
-let cache = [];        // logs
-let authListenerBound = false;
+let selected = null;
+let cache = [];
 
 /* ========= connectivity ========= */
 addEventListener("offline", ()=>{
@@ -111,12 +106,11 @@ function uiSignedIn(user){
   navBox?.classList.remove("hidden");
   btnLogout?.classList.remove("hidden");
   editorEl?.classList.remove("locked");
-
   if (whoEmail) whoEmail.textContent = user.email ?? "(unknown)";
 }
 
 /* ========= Draft (autosave) ========= */
-const DRAFT_KEY = "wired_draft_v1";
+const DRAFT_KEY = "wired_draft_v2";
 
 function draftId(){
   const uid = currentUser?.id || "anon";
@@ -128,7 +122,6 @@ function readDraftAll(){
   try{ return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}"); }
   catch{ return {}; }
 }
-
 function writeDraftAll(obj){
   try{ localStorage.setItem(DRAFT_KEY, JSON.stringify(obj)); }catch{}
 }
@@ -164,10 +157,6 @@ function applyDraftIfAny(){
   const d = all[draftId()];
   if (!d) return;
 
-  const bodyEl = $("#body");
-  if (!bodyEl) return;
-
-  // draft本文があるなら復元（確実に守る）
   if (!String(d.body || "").length) return;
 
   $("#kind").value  = d.kind ?? $("#kind").value;
@@ -182,13 +171,12 @@ function applyDraftIfAny(){
 
 let draftTimer = 0;
 function hookDraftAutosave(){
-  if (!editorEl) return;
+  const root = editorEl;
+  if (!root) return;
+  if (root.dataset.draftHooked === "1") return;
+  root.dataset.draftHooked = "1";
 
-  // editorElは毎回innerHTMLを作り直すので dataset を使って二重登録を防ぐ
-  if (editorEl.dataset.draftHooked === "1") return;
-  editorEl.dataset.draftHooked = "1";
-
-  editorEl.addEventListener("input", ()=>{
+  root.addEventListener("input", ()=>{
     window.clearTimeout(draftTimer);
     draftTimer = window.setTimeout(()=>saveDraftNow(), 260);
   }, { passive: true });
@@ -198,7 +186,7 @@ function hookDraftAutosave(){
 async function login(){
   setStatus("LOGIN…");
   try{
-    const { data, error } = await sb().auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: (emailEl?.value ?? "").trim(),
       password: passEl?.value ?? ""
     });
@@ -206,7 +194,6 @@ async function login(){
 
     glitchPulse();
     await onSession(data.session);
-
   }catch(e){
     console.error(e);
     setStatus("ERR: " + (e?.message ?? "LOGIN FAILED"));
@@ -217,7 +204,7 @@ async function login(){
 async function signup(){
   setStatus("SIGNUP…");
   try{
-    const { error } = await sb().auth.signUp({
+    const { error } = await supabase.auth.signUp({
       email: (emailEl?.value ?? "").trim(),
       password: passEl?.value ?? ""
     });
@@ -234,7 +221,7 @@ async function signup(){
 
 async function logout(){
   setStatus("LOGOUT…");
-  try{ await sb().auth.signOut(); }catch{}
+  try{ await supabase.auth.signOut(); }catch{}
   uiSignedOut();
   setStatus("DISCONNECTED");
   glitchPulse();
@@ -265,7 +252,6 @@ function renderList(items){
   for (const it of items){
     const div = document.createElement("div");
     div.className = "item";
-    div.dataset.id = it.id;
 
     const preview = (it.body || "").replace(/\s+/g," ").slice(0,120);
     const tags = (it.tags||[])
@@ -287,34 +273,22 @@ function renderList(items){
   }
 }
 
-/* ========= session keep-alive ========= */
-async function softRefreshSession(){
-  try{
-    await sb().auth.refreshSession();
-  }catch{
-    // ignore (maintenance/offline/etc)
-  }
-}
-
-async function ensureSessionOrThrow(){
-  const { data, error } = await sb().auth.getSession();
+/* ========= session ========= */
+async function ensureSession(){
+  const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
-  if (!data?.session) throw new Error("SESSION EXPIRED");
-  currentUser = data.session.user;
+  if (!data?.session?.user) return null;
   return data.session;
 }
 
 /* ========= data ========= */
-async function fetchLogs({ retry = 2 } = {}){
+async function fetchLogs({ retry = 1 } = {}){
   if (!currentUser) return;
 
   setStatus("SYNC…");
-
   try{
-    // 放置復帰対策（失敗しても続行）
-    await softRefreshSession();
-
-    const { data, error } = await sb()
+    // ここで refreshSession を乱発しない（iOS/PC両方で不安定化しうる）
+    const { data, error } = await supabase
       .from("logs")
       .select("*")
       .order("created_at", { ascending:false })
@@ -325,21 +299,20 @@ async function fetchLogs({ retry = 2 } = {}){
     cache = data || [];
     renderList(filteredList());
     setStatus(`SYNC OK // ${cache.length} logs`);
-    return;
-
   }catch(e){
     console.error(e);
 
     if (isAbortError(e) && retry > 0){
       setStatus("SYNC ABORTED // RETRY");
-      await sleep(260);
+      await sleep(350);
       return fetchLogs({ retry: retry - 1 });
     }
 
-    // maintenanceっぽい時に分かりやすく
-    const msg = String(e?.message || "");
-    if (msg.toLowerCase().includes("maintenance")){
-      setStatus("SUPABASE MAINTENANCE // WAIT");
+    // ここで「セッション切れ」も疑う
+    const s = await ensureSession().catch(()=>null);
+    if (!s){
+      uiSignedOut();
+      setStatus("SESSION LOST // RELOGIN");
       return;
     }
 
@@ -356,8 +329,6 @@ function openEditor(it){
 
   editorEl.innerHTML = "";
   editorEl.appendChild(editorTpl.content.cloneNode(true));
-
-  // editorEl再生成につきフック解除→再付与
   editorEl.dataset.draftHooked = "0";
 
   $("#kind").value  = it.kind ?? "Note";
@@ -366,16 +337,7 @@ function openEditor(it){
   $("#mood").value  = (it.mood ?? "");
   $("#body").value  = it.body ?? "";
 
-  // meta
-  const meta = $("#metaLine");
-  if (meta){
-    const id = it.id ?? "-";
-    const c = it.created_at ? new Date(it.created_at).toLocaleString() : "-";
-    const u = it.updated_at ? new Date(it.updated_at).toLocaleString() : "-";
-    meta.textContent = `id ${id} // created ${c} // updated ${u}`;
-  }
-
-  $("#btnSave").onclick = ()=>saveCurrent({ retry: 2 });
+  $("#btnSave").onclick = ()=>saveCurrent({ retry: 1 });
   $("#btnDelete").onclick = deleteCurrent;
 
   hookDraftAutosave();
@@ -387,30 +349,28 @@ function openEditor(it){
 
 function newEditor(kind="Note"){
   openEditor({
-    id: null,
+    id:null,
     kind,
-    title: "",
-    body: "",
-    tags: [],
-    mood: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    title:"",
+    body:"",
+    tags:[],
+    mood:null,
+    created_at: new Date().toISOString()
   });
 }
 
 /* ========= SAVE ========= */
-async function saveCurrent({ retry = 2 } = {}){
+async function saveCurrent({ retry = 1 } = {}){
   try{
     setStatus("SAVE…");
 
-    // SAVE前に必ず下書き保存（守る）
-    saveDraftNow();
-
-    // 放置復帰対策（失敗しても続行）
-    await softRefreshSession();
-
-    // session保証（切れてたらここで止める）
-    await ensureSessionOrThrow();
+    const s = await ensureSession();
+    if (!s){
+      setStatus("SESSION LOST // RELOGIN");
+      alert("セッションが切れています。再ログインしてください。\n（本文は下書きとして保持されています）");
+      return;
+    }
+    currentUser = s.user;
 
     if (!selected) throw new Error("EDITOR STATE LOST");
 
@@ -420,51 +380,31 @@ async function saveCurrent({ retry = 2 } = {}){
       body:  ($("#body")?.value ?? ""),
       tags:  ($("#tags")?.value ?? "").split(",").map(s=>s.trim()).filter(Boolean),
       mood:  ($("#mood")?.value ?? "") === "" ? null : Number($("#mood")?.value),
-      user_id: currentUser.id,
+      user_id: currentUser.id
     };
 
-    // INSERT / UPDATE
+    let error;
     if (!selected.id){
-      const { error } = await sb().from("logs").insert(payload);
-      if (error) throw error;
+      ({ error } = await supabase.from("logs").insert(payload));
     } else {
-      const { error } = await sb().from("logs").update(payload).eq("id", selected.id);
-      if (error) throw error;
+      ({ error } = await supabase.from("logs").update(payload).eq("id", selected.id));
     }
+    if (error) throw error;
 
-    // 成功したら draft を消す
     clearDraft();
-
     try{ window.WiredAudio?.saveSound?.(); }catch{}
-    await fetchLogs({ retry: 2 });
+    await fetchLogs({ retry: 1 });
 
-    // 次のログへ（kind維持）
     newEditor(payload.kind);
     setStatus("READY // NEXT LOG");
     glitchPulse();
-
   }catch(e){
     console.error(e);
 
     if (isAbortError(e) && retry > 0){
       setStatus("SAVE ABORTED // RETRY");
-      await sleep(260);
+      await sleep(350);
       return saveCurrent({ retry: retry - 1 });
-    }
-
-    if (String(e?.message || "").includes("SESSION EXPIRED")){
-      setStatus("SESSION LOST // RELOGIN");
-      try{ window.WiredAudio?.errorSound?.(); }catch{}
-      alert("セッションが切れています。再ログインしてください。\n（本文は下書きとして保持されています）");
-      return;
-    }
-
-    // maintenanceっぽい時
-    const msg = String(e?.message || "");
-    if (msg.toLowerCase().includes("maintenance")){
-      setStatus("SUPABASE MAINTENANCE // WAIT");
-      alert("Supabaseがメンテ中の可能性があります。\n（本文は下書きとして保持されています）");
-      return;
     }
 
     setStatus("ERR: SAVE FAILED");
@@ -478,29 +418,25 @@ async function deleteCurrent(){
   if (!confirm("DELETE LOG?")) return;
 
   setStatus("DELETE…");
-
   try{
-    await softRefreshSession();
-    await ensureSessionOrThrow();
+    const s = await ensureSession();
+    if (!s){
+      uiSignedOut();
+      setStatus("SESSION LOST // RELOGIN");
+      return;
+    }
+    currentUser = s.user;
 
-    const { error } = await sb().from("logs").delete().eq("id", selected.id);
+    const { error } = await supabase.from("logs").delete().eq("id", selected.id);
     if (error) throw error;
 
     clearDraft();
-    await fetchLogs({ retry: 2 });
+    await fetchLogs({ retry: 1 });
     newEditor();
     setStatus("DELETED.");
     glitchPulse();
-
   }catch(e){
     console.error(e);
-
-    if (isAbortError(e)){
-      setStatus("DELETE ABORTED // RETRY");
-      alert("通信が一時的に切断されました。もう一度DELETEしてください。");
-      return;
-    }
-
     setStatus("ERR: " + (e?.message ?? "DELETE FAILED"));
     try{ window.WiredAudio?.errorSound?.(); }catch{}
   }
@@ -515,28 +451,18 @@ async function onSession(session){
   currentUser = session.user;
   uiSignedIn(currentUser);
 
-  await fetchLogs({ retry: 2 });
+  await fetchLogs({ retry: 1 });
   newEditor();
 }
 
 /* ========= events ========= */
-btnLogin?.addEventListener("click", ()=>{
-  try{ window.WiredAudio?.resumeAudio?.(); }catch{}
-  login();
-});
-
+btnLogin?.addEventListener("click", login);
 btnSignup?.addEventListener("click", signup);
 btnLogout?.addEventListener("click", logout);
-
-btnRefresh?.addEventListener("click", ()=>{
-  glitchPulse();
-  fetchLogs({ retry: 2 });
-});
-
+btnRefresh?.addEventListener("click", ()=>fetchLogs({ retry: 1 }));
 btnNew?.addEventListener("click", ()=>{
   glitchPulse();
-  const k = $("#kind")?.value || "Note";
-  newEditor(k);
+  newEditor($("#kind")?.value || "Note");
 });
 
 kindFilterEl?.addEventListener("change", ()=> renderList(filteredList()));
@@ -546,10 +472,8 @@ qEl?.addEventListener("input", ()=> renderList(filteredList()));
 setStatus("BOOT…");
 showOfflineBanner(!navigator.onLine);
 
-// 初期：セッション確認→UI反映
 try{
-  const { data } = await sb().auth.getSession();
-  setStatus("BOOT CHECK // session=" + (data?.session ? "YES" : "NO"));
+  const { data } = await supabase.auth.getSession();
   await onSession(data.session);
 }catch(e){
   console.error(e);
@@ -557,16 +481,11 @@ try{
   setStatus("AUTH REQUIRED // CONNECT TO WIRED");
 }
 
-// onAuthStateChange は1回だけ
-if (!authListenerBound){
-  authListenerBound = true;
-  sb().auth.onAuthStateChange((_event, session)=>{
-    // awaitできないのでそのまま
-    onSession(session);
-  });
-}
+supabase.auth.onAuthStateChange((_event, session)=>{
+  onSession(session);
+});
 
-// keep alive（軽量）
+// keep alive（軽め）
 setInterval(async ()=>{
-  try{ await sb().auth.getSession(); }catch{}
+  try{ await supabase.auth.getSession(); }catch{}
 }, 5 * 60 * 1000);
