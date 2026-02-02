@@ -1,4 +1,4 @@
-# WIRED LOG (GitHub Pages + Supabase)
+# WIRED LOG (The GitHub Pages + Supabase)
 
 ## 1) Supabase設定
 - Project URL / anon public key を `docs/supabase.js` に貼る
