@@ -1,5 +1,5 @@
 /* docs/sw.js (SAFE for PWA + Supabase) */
-const CACHE_NAME = "wired-log-ps1-v9"; // ★更新したら必ず増やす
+const CACHE_NAME = "wired-log-ps1-v10"; // ★更新したら必ず増やす
 const ASSETS = [
   "./",
   "./index.html",
