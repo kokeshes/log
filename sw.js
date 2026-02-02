@@ -1,5 +1,5 @@
-/* sw.js (SAFE for iOS PWA + Supabase) */
-const CACHE_NAME = "wired-log-ps1-v8"; // ★更新したら名前を変えると確実に差し替わる
+/* docs/sw.js (SAFE for PWA + Supabase) */
+const CACHE_NAME = "wired-log-ps1-v9"; // ★更新したら必ず増やす
 const ASSETS = [
   "./",
   "./index.html",
@@ -14,16 +14,15 @@ const ASSETS = [
   "./assets/icon-512.png",
   "./assets/wired-girl.png",
   "./assets/bg.jpg",
-  // static room を使ってるなら入れてOK
   "./static.html",
   "./static.js",
-  "./lain-shadow.png",
+  "./assets/lain-shadow.png",
+  "./audio.js",
 ];
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    // addAll が落ちると install 失敗するので、できるだけ確実に入れる
     await cache.addAll(ASSETS);
     await self.skipWaiting();
   })());
@@ -41,61 +40,53 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // 1) GET以外はSWが一切触らない（POST/PUT/DELETEは素通し）
-  if (req.method !== "GET") return;
-
-  // 2) Supabase にはSWが一切触らない（GETでもキャッシュ汚染を防ぐ）
-  //    ※ project-ref.supabase.co も supabase.co を含む
+  // ✅ Supabase は SW が一切触らない（GETでも！）
   if (url.hostname.includes("supabase.co")) return;
 
-  // 3) 同一オリジン以外も触らない（CDN等があっても安全）
+  // GET以外はSWが触らない（POST/PUT/DELETE素通し）
+  if (req.method !== "GET") return;
+
+  // 同一オリジン以外は触らない
   if (url.origin !== self.location.origin) return;
 
-  // 4) ナビゲーション(HTML遷移)は「ネット優先 + オフラインなら index.html」
   const accept = req.headers.get("accept") || "";
   const isNav = req.mode === "navigate" || accept.includes("text/html");
 
+  // ナビゲーションはネット優先、落ちたらキャッシュ
   if (isNav) {
     event.respondWith((async () => {
       try {
-        // ネット優先（最新版）
         const fresh = await fetch(req, { cache: "no-store" });
-        // 成功したHTMLはキャッシュしてもOK（ただし同一オリジンのみ）
         const cache = await caches.open(CACHE_NAME);
         cache.put(req, fresh.clone());
         return fresh;
-      } catch (e) {
-        // オフライン時は index.html にフォールバック
-        const cached = await caches.match(req);
-        return cached || (await caches.match("./index.html"));
+      } catch {
+        return (await caches.match(req)) || (await caches.match("./index.html"));
       }
     })());
     return;
   }
 
-  // 5) 静的ファイルは「キャッシュ優先 + 背景で更新」
+  // 静的ファイルはキャッシュ優先＋裏で更新
   event.respondWith((async () => {
     const cached = await caches.match(req);
     if (cached) {
-      // 背景更新（失敗しても無視）
       event.waitUntil((async () => {
         try {
           const fresh = await fetch(req);
           const cache = await caches.open(CACHE_NAME);
           await cache.put(req, fresh.clone());
-        } catch (e) {}
+        } catch {}
       })());
       return cached;
     }
 
-    // 初回はネット→成功したらキャッシュ
     try {
       const fresh = await fetch(req);
       const cache = await caches.open(CACHE_NAME);
       await cache.put(req, fresh.clone());
       return fresh;
-    } catch (e) {
-      // CSS/JS等でネットもキャッシュも無い場合は何も返せないのでそのまま落とす
+    } catch {
       return new Response("", { status: 504, statusText: "offline" });
     }
   })());
