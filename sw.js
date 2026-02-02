@@ -1,93 +1,69 @@
-/* docs/sw.js (SAFE for PWA + Supabase) */
-const CACHE_NAME = "wired-log-ps1-v10"; // ★更新したら必ず増やす
+// docs/sw.js
+const CACHE = "wired-cache-v9"; // ← v9に上げたならここも一致させる
 const ASSETS = [
   "./",
   "./index.html",
+  "./static.html",
   "./styles.css",
   "./app.js",
   "./supabase.js",
   "./noise.js",
   "./crt.js",
   "./ps1.js",
+  "./audio.js",
+  "./static.js",
   "./manifest.json",
   "./assets/icon-192.png",
-  "./assets/icon-512.png",
   "./assets/wired-girl.png",
-  "./assets/bg.jpg",
-  "./static.html",
-  "./static.js",
   "./assets/lain-shadow.png",
-  "./audio.js",
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil((async () => {
-    const cache = await caches.open(CACHE_NAME);
-    await cache.addAll(ASSETS);
-    await self.skipWaiting();
+  event.waitUntil((async ()=>{
+    const cache = await caches.open(CACHE);
+    // ★ addAll が落ちてもSW全体は生かす
+    for (const url of ASSETS){
+      try{
+        await cache.add(url);
+      }catch(e){
+        // 取れないやつがあっても継続
+        // console.log はSWだと見づらいので無言でもOK
+      }
+    }
+    self.skipWaiting();
   })());
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil((async () => {
+  event.waitUntil((async ()=>{
     const keys = await caches.keys();
-    await Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : null)));
-    await self.clients.claim();
+    await Promise.all(keys.map(k => (k === CACHE ? null : caches.delete(k))));
+    self.clients.claim();
   })());
 });
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
+
+  // Supabase など外部APIは触らない（Abort増える）
   const url = new URL(req.url);
+  if (url.origin !== location.origin) return;
 
-  // ✅ Supabase は SW が一切触らない（GETでも！）
-  if (url.hostname.includes("supabase.co")) return;
+  event.respondWith((async ()=>{
+    const cache = await caches.open(CACHE);
+    const cached = await cache.match(req);
+    if (cached) return cached;
 
-  // GET以外はSWが触らない（POST/PUT/DELETE素通し）
-  if (req.method !== "GET") return;
-
-  // 同一オリジン以外は触らない
-  if (url.origin !== self.location.origin) return;
-
-  const accept = req.headers.get("accept") || "";
-  const isNav = req.mode === "navigate" || accept.includes("text/html");
-
-  // ナビゲーションはネット優先、落ちたらキャッシュ
-  if (isNav) {
-    event.respondWith((async () => {
-      try {
-        const fresh = await fetch(req, { cache: "no-store" });
-        const cache = await caches.open(CACHE_NAME);
-        cache.put(req, fresh.clone());
-        return fresh;
-      } catch {
-        return (await caches.match(req)) || (await caches.match("./index.html"));
+    try{
+      const res = await fetch(req);
+      // 成功したら静的ファイルだけキャッシュ
+      if (req.method === "GET" && res.ok && (url.pathname.endsWith(".js") || url.pathname.endsWith(".css") || url.pathname.endsWith(".html") || url.pathname.endsWith(".png") || url.pathname.endsWith(".json"))){
+        cache.put(req, res.clone()).catch(()=>{});
       }
-    })());
-    return;
-  }
-
-  // 静的ファイルはキャッシュ優先＋裏で更新
-  event.respondWith((async () => {
-    const cached = await caches.match(req);
-    if (cached) {
-      event.waitUntil((async () => {
-        try {
-          const fresh = await fetch(req);
-          const cache = await caches.open(CACHE_NAME);
-          await cache.put(req, fresh.clone());
-        } catch {}
-      })());
-      return cached;
-    }
-
-    try {
-      const fresh = await fetch(req);
-      const cache = await caches.open(CACHE_NAME);
-      await cache.put(req, fresh.clone());
-      return fresh;
-    } catch {
-      return new Response("", { status: 504, statusText: "offline" });
+      return res;
+    }catch(e){
+      // ネット死んでる時：キャッシュが無ければそのまま落とす
+      return cached || Response.error();
     }
   })());
 });
