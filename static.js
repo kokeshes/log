@@ -7,7 +7,6 @@
   const blink = $("#blinkLayer");
   const shadowImg = $("#shadowImg");
   const diag = $("#diag");
-  const hint = $("#uiHint");
 
   const ctx = canvas.getContext("2d", { alpha:false });
   const bctx = blink.getContext("2d", { alpha:true });
@@ -65,7 +64,7 @@
     "LAYER 11 // RESIDUAL SIGNAL",
     "make me sad",
     "make me mad",
-    "make me feel alright?"
+    "make me feel alright"
   ];
 
   function drawLainLine(){
@@ -120,6 +119,8 @@
     if(vGlitch) glitch = vGlitch.value/100;
     if(aVol) volume = aVol.value/100;
     if(aTone) tone = aTone.value/100;
+
+    // audio.js 側に set() が無くても死なない
     try{ window.WiredAudio?.set?.({ volume, tone }); }catch{}
   }
 
@@ -156,23 +157,66 @@
     try{ window.WiredAudio?.calm?.(); }catch{}
   }
 
+  function setUI(on){
+    uiOn = !!on;
+    document.body.classList.toggle("ui-off", !uiOn);
+    if(btnUI) btnUI.textContent = uiOn ? "UI: ON" : "UI: OFF";
+  }
+
   btnToggle?.addEventListener("click", toggle);
   btnBurst?.addEventListener("click", burstNow);
   btnCalm?.addEventListener("click", calm);
-  btnUI?.addEventListener("click", ()=>{
-    uiOn=!uiOn;
-    document.body.classList.toggle("ui-off",!uiOn);
-  });
 
-  btnEnable?.addEventListener("click", async ()=>{
+  btnUI?.addEventListener("click", () => setUI(!uiOn));
+
+  // iOSで click が遅延/スクロール扱いされるのを避ける
+  const press = (el, fn) => {
+    if(!el) return;
+    el.addEventListener("pointerdown", (e) => {
+      // ✅ UIが勝手に消える・スクロール扱いになるのを防ぐ
+      e.preventDefault();
+      e.stopPropagation();
+      fn(e);
+    }, { passive:false });
+  };
+
+  // ENABLE AUDIO: 絶対にUIをOFFにしない / 状態をdiagに出す
+  press(btnEnable, async () => {
     try{
-      await window.WiredAudio?.start?.();
-      await window.WiredAudio?.staticNoise?.();
-      DIAG("AUDIO OK");
+      if(!window.WiredAudio){
+        DIAG("AUDIO MISSING // load audio.js in static.html");
+        return;
+      }
+      DIAG("AUDIO UNLOCK…");
+      await window.WiredAudio.start?.();
+
+      // 一旦“静的ノイズ用”へ
+      await window.WiredAudio.staticNoise?.();
+
+      // 音量反映（setが無くてもOK）
+      syncUI();
+
+      // UIは絶対ONに戻す（事故防止）
+      setUI(true);
+
+      // 状態表示（AudioContextが見えない場合もあるので try）
+      let st = "OK";
+      try{
+        const ac = window.WiredAudio.__ac;
+        if(ac) st = ac.state;
+      }catch{}
+      DIAG("AUDIO OK // " + st);
     }catch(e){
-      DIAG("AUDIO ERR");
+      setUI(true);
+      DIAG("AUDIO ERR // " + (e?.message || e));
+      try{ console.warn(e); }catch{}
     }
   });
+
+  press(btnToggle, () => toggle());
+  press(btnBurst, () => burstNow());
+  press(btnCalm, () => calm());
+  press(btnUI, () => setUI(!uiOn));
 
   /* =========================
      DRAW LOOP
@@ -221,11 +265,16 @@
 
   DIAG("STATIC READY // ENABLE AUDIO");
   syncUI();
+  setUI(true);
 
+  // ログイン後に起動（いままで通り）
   addEventListener("wired-user-ready", start);
 
-  /* mobile unlock safety */
-  const unlockOnce = ()=>{ try{ window.WiredAudio?.start?.(); }catch{} };
-  addEventListener("pointerdown", unlockOnce, { once:true, passive:true });
-  addEventListener("touchstart", unlockOnce, { once:true, passive:true });
+  // 画面復帰で音が止まる対策（iOS）
+  document.addEventListener("visibilitychange", async () => {
+    if(document.visibilityState !== "visible") return;
+    try{
+      await window.WiredAudio?.start?.(); // resume
+    }catch{}
+  });
 })();
