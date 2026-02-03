@@ -1,5 +1,36 @@
 // docs/app.js
-import { getSupabase, resetSupabase } from "./supabase.js";
+import { getSupabase } from "./supabase.js";
+
+const sb = getSupabase();
+
+async function selectLogsOnce(){
+  return await sb
+    .from("logs")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(200);
+}
+
+async function selectLogsSafe(){
+  // まず普通に取得
+  let res = await selectLogsOnce();
+  if (!res.error) return res;
+
+  const status = res.error?.status || res.status;
+
+  // 401/403 のときだけ refresh → 1回だけ取り直す
+  if (status === 401 || status === 403){
+    const r = await sb.__refreshWithLock?.();
+    // 429等でrefreshできない時は、ここで即ログアウト扱いにしない
+    if (r?.error){
+      return res; // 元のエラーを返す（UI側で“再試行”に寄せる）
+    }
+    res = await selectLogsOnce();
+  }
+
+  return res;
+}
+
 
 /* ========= helpers ========= */
 const $ = (s) => document.querySelector(s);
