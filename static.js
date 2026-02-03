@@ -1,34 +1,17 @@
 // docs/static.js
-// STATIC ROOM // THE WIRED
-// SW触らない前提：このJS自体で「LOADING解除」「原因を画面表示」「強め砂嵐」「Lain文字フラッシュ」「local保存」までやる
-
 (() => {
   const $ = (s) => document.querySelector(s);
-  const diag = $("#diag");
-  const hint = $("#uiHint");
+  const $$ = (s) => Array.from(document.querySelectorAll(s));
 
-  // ---- fail-safe: never stuck on LOADING ----
-  const DIAG = (msg) => {
-    try {
-      if (diag) diag.textContent = msg;
-      console.log("[STATIC]", msg);
-    } catch {}
-  };
-
-  const showHint = (msg, ms = 900) => {
-    if (!hint) return;
-    hint.textContent = msg;
-    hint.classList.add("on");
-    setTimeout(() => hint.classList.remove("on"), ms);
-  };
-
-  // ここに来れている時点で「JSは読み込めてる」
-  DIAG("STATIC JS LOADED…");
-
-  // ---- elements ----
   const canvas = $("#staticCanvas");
   const blink = $("#blinkLayer");
   const shadowImg = $("#shadowImg");
+  const diag = $("#diag");
+  const hint = $("#uiHint");
+
+  const ctx = canvas.getContext("2d", { alpha:false });
+  const bctx = blink.getContext("2d", { alpha:true });
+
   const btnEnable = $("#btnEnable");
   const btnToggle = $("#btnToggle");
   const btnBurst  = $("#btnBurst");
@@ -40,43 +23,39 @@
   const aVol = $("#aVol");
   const aTone = $("#aTone");
 
-  if (!canvas || !blink) {
-    DIAG("ERR: canvas missing (#staticCanvas / #blinkLayer)");
-    return;
-  }
+  const DIAG = (t)=>{ if(diag) diag.textContent=t; };
 
-  const ctx = canvas.getContext("2d", { alpha: false });
-  const bctx = blink.getContext("2d", { alpha: true });
-
-  // ---- state ----
+  /* =========================
+     STATE
+  ========================= */
   let enabled = false;
   let raf = 0;
 
-  let intensity = 0.70; // 0..1
-  let glitch = 0.38;    // 0..1
-  let volume = 0.26;    // 0..1 (WiredAudio側に渡す)
-  let tone = 0.36;      // 0..1 (WiredAudio側に渡す)
-  let burst = 0;        // 0..1
+  let intensity = 0.7;
+  let glitch = 0.38;
+  let volume = 0.26;
+  let tone = 0.36;
+
+  let burst = 0;
   let uiOn = true;
 
-  // ---- local trace storage (index側で読む想定) ----
-  const TRACE_KEY = "wired_static_trace_v1";
-  const TRACE_MAX = 80;
-
-  function readTrace() {
-    try { return JSON.parse(localStorage.getItem(TRACE_KEY) || "[]"); }
-    catch { return []; }
+  /* =========================
+     RESIZE
+  ========================= */
+  function resize(){
+    const w = innerWidth;
+    const h = innerHeight;
+    canvas.width = w;
+    canvas.height = h;
+    blink.width = w;
+    blink.height = h;
   }
-  function pushTrace(line) {
-    try {
-      const arr = readTrace();
-      arr.unshift({ at: Date.now(), line });
-      while (arr.length > TRACE_MAX) arr.pop();
-      localStorage.setItem(TRACE_KEY, JSON.stringify(arr));
-    } catch {}
-  }
+  resize();
+  addEventListener("resize", resize, { passive:true });
 
-  // ---- Lain lines ----
+  /* =========================
+     LAIN LINES (CANVAS)
+  ========================= */
   const LAIN_LINE = [
     "PRESENT TIME. PRESENT DAY.",
     "YOU ARE CONNECTED.",
@@ -86,231 +65,167 @@
     "LAYER 11 // RESIDUAL SIGNAL",
     "make me sad",
     "make me mad",
-    "make me feel alright?"
+    "make me feel alright"
   ];
 
-  function pickLine() {
-    return LAIN_LINE[(Math.random() * LAIN_LINE.length) | 0];
+  function drawLainLine(){
+    const line = LAIN_LINE[(Math.random()*LAIN_LINE.length)|0];
+    const x = Math.random() * canvas.width;
+    const y = Math.random() * canvas.height;
+
+    ctx.save();
+    ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
+    ctx.fillStyle = `rgba(180,255,220,${0.18 + Math.random()*0.22})`;
+    ctx.shadowColor = "rgba(120,255,220,.35)";
+    ctx.shadowBlur = 8;
+    ctx.fillText(line, x, y);
+    ctx.restore();
   }
 
-  // ---- resize (CSS size -> drawing size) ----
-  function resize() {
-    const w = Math.max(1, window.innerWidth);
-    const h = Math.max(1, window.innerHeight);
-    canvas.width = w;
-    canvas.height = h;
-    blink.width = w;
-    blink.height = h;
-  }
-  resize();
-  addEventListener("resize", resize, { passive: true });
+  /* =========================
+     TEXT SCRAMBLE (DOM)
+  ========================= */
+  const SCRAMBLE_CHARS = "▓▒░█#@$%&*+-=/\\<>";
 
-  // ---- UI binds ----
-  const clamp01 = (x) => Math.max(0, Math.min(1, x));
+  const scrambleTargets = $$(
+    ".wired-scramble,[data-ui-scramble='1'],[data-scramble='1']"
+  ).map(el => ({
+    el,
+    original: el.textContent
+  }));
 
-  function syncUI() {
-    if (vIntensity) intensity = clamp01((Number(vIntensity.value) || 0) / 100);
-    if (vGlitch) glitch = clamp01((Number(vGlitch.value) || 0) / 100);
-    if (aVol) volume = clamp01((Number(aVol.value) || 0) / 100);
-    if (aTone) tone = clamp01((Number(aTone.value) || 0) / 100);
-
-    // Audioへ（存在すれば）
-    try {
-      window.WiredAudio?.set?.({ volume, tone });
-    } catch {}
+  function scrambleOnce(target){
+    const { el, original } = target;
+    const len = original.length;
+    let scrambled = "";
+    for(let i=0;i<len;i++){
+      scrambled += SCRAMBLE_CHARS[(Math.random()*SCRAMBLE_CHARS.length)|0];
+    }
+    el.textContent = scrambled;
+    setTimeout(()=>{ el.textContent = original; }, 40 + Math.random()*80);
   }
 
-  vIntensity?.addEventListener("input", syncUI, { passive: true });
-  vGlitch?.addEventListener("input", syncUI, { passive: true });
-  aVol?.addEventListener("input", syncUI, { passive: true });
-  aTone?.addEventListener("input", syncUI, { passive: true });
-
-  function toggleUI() {
-    uiOn = !uiOn;
-    document.body.classList.toggle("ui-off", !uiOn);
-    if (btnUI) btnUI.textContent = uiOn ? "UI: ON" : "UI: OFF";
-    showHint(uiOn ? "UI ON" : "UI OFF");
+  function randomScramble(){
+    if(Math.random() < 0.35){
+      const t = scrambleTargets[(Math.random()*scrambleTargets.length)|0];
+      if(t) scrambleOnce(t);
+    }
   }
 
-  function start() {
-    if (enabled) return;
+  /* =========================
+     AUDIO / UI
+  ========================= */
+  function syncUI(){
+    if(vIntensity) intensity = vIntensity.value/100;
+    if(vGlitch) glitch = vGlitch.value/100;
+    if(aVol) volume = aVol.value/100;
+    if(aTone) tone = aTone.value/100;
+    try{ window.WiredAudio?.set?.({ volume, tone }); }catch{}
+  }
+
+  vIntensity?.addEventListener("input", syncUI);
+  vGlitch?.addEventListener("input", syncUI);
+  aVol?.addEventListener("input", syncUI);
+  aTone?.addEventListener("input", syncUI);
+
+  function start(){
+    if(enabled) return;
     enabled = true;
-    if (btnToggle) btnToggle.textContent = "STOP";
+    btnToggle && (btnToggle.textContent="STOP");
     DIAG("STATIC ONLINE");
-    try { window.WiredAudio?.staticNoise?.(); } catch {}
     loop();
   }
 
-  function stop() {
-    enabled = false;
-    if (btnToggle) btnToggle.textContent = "START";
+  function stop(){
+    enabled=false;
+    btnToggle && (btnToggle.textContent="START");
+    cancelAnimationFrame(raf);
     DIAG("STATIC STANDBY");
-    if (raf) cancelAnimationFrame(raf);
   }
 
-  function toggle() {
-    enabled ? stop() : start();
+  function toggle(){ enabled ? stop() : start(); }
+
+  function burstNow(){
+    burst = Math.min(1, burst+0.45);
+    try{ window.WiredAudio?.burst?.(); }catch{}
+    drawLainLine();
   }
 
-  function burstNow() {
-    burst = clamp01(burst + 0.45);
-    try { window.WiredAudio?.burst?.(); } catch {}
-    const line = pickLine();
-    flashLine(line);
-    pushTrace(line);
-  }
-
-  function calm() {
+  function calm(){
     burst = 0;
-    try { window.WiredAudio?.calm?.(); } catch {}
-    showHint("CALM");
+    try{ window.WiredAudio?.calm?.(); }catch{}
   }
-
-  btnEnable?.addEventListener("click", () => {
-    // iOS向け：ユーザー操作でAudio解錠
-    window.WiredAudio?.start?.().catch?.(()=>{});
-    showHint("AUDIO ENABLE");
-  }, { passive: true });
 
   btnToggle?.addEventListener("click", toggle);
   btnBurst?.addEventListener("click", burstNow);
   btnCalm?.addEventListener("click", calm);
-  btnUI?.addEventListener("click", toggleUI);
-
-  // キーボード U でUI toggle
-  addEventListener("keydown", (e) => {
-    if ((e.key || "").toLowerCase() === "u") toggleUI();
-    if (e.key === " "){ e.preventDefault(); burstNow(); }
+  btnUI?.addEventListener("click", ()=>{
+    uiOn=!uiOn;
+    document.body.classList.toggle("ui-off",!uiOn);
   });
 
-  // scrollでもちょいバースト（indexと同じ）
-  addEventListener("scroll", () => {
-    burst = clamp01(burst + 0.10);
-  }, { passive: true });
-
-  // ---- text flash (uses existing .scramble-pill nodes) ----
-  const pills = Array.from(document.querySelectorAll("[data-scramble='1']"));
-
-  function flashLine(line) {
-    // 画面上部に一瞬
-    showHint(line, 1100);
-
-    // pillもランダムに差し替え（レイアウト崩さない）
-    if (pills.length) {
-      const p = pills[(Math.random() * pills.length) | 0];
-      p.textContent = line;
+  btnEnable?.addEventListener("click", async ()=>{
+    try{
+      await window.WiredAudio?.start?.();
+      await window.WiredAudio?.staticNoise?.();
+      DIAG("AUDIO OK");
+    }catch(e){
+      DIAG("AUDIO ERR");
     }
-  }
+  });
 
-  // ---- aggressive noise drawing (fast + strong) ----
-  function rand(n) { return Math.random() * n; }
-
-  function draw() {
-    if (!enabled) return;
+  /* =========================
+     DRAW LOOP
+  ========================= */
+  function draw(){
+    if(!enabled) return;
 
     const w = canvas.width, h = canvas.height;
 
-    // base fade (残像)
-    ctx.fillStyle = "rgba(0,0,0,0.18)";
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
+    ctx.fillRect(0,0,w,h);
 
-    // noise density
-    const baseDots = 2200 + (intensity * 6000);
-    const extra = Math.floor(burst * 9000);
-    const dots = baseDots + extra;
-
-    // pixel noise
-    for (let i = 0; i < dots; i++) {
-      const x = (rand(w)) | 0;
-      const y = (rand(h)) | 0;
-
-      const a = 0.06 + rand(0.28) + burst * 0.35;
-      // 白だけだと単調なので少し色ズレ
-      const r = 200 + (rand(55) | 0);
-      const g = 200 + (rand(55) | 0);
-      const b = 200 + (rand(55) | 0);
-      ctx.fillStyle = `rgba(${r},${g},${b},${a.toFixed(3)})`;
-      ctx.fillRect(x, y, 1, 1);
+    const dots = 1800 + intensity*5200 + burst*6000;
+    for(let i=0;i<dots;i++){
+      const x = Math.random()*w;
+      const y = Math.random()*h;
+      const a = 0.04 + Math.random()*0.28 + burst*0.35;
+      ctx.fillStyle = `rgba(255,255,255,${a})`;
+      ctx.fillRect(x,y,1,1);
     }
 
-    // horizontal tear
-    if (Math.random() < (0.08 + glitch * 0.14 + burst * 0.18)) {
-      const y = (rand(h)) | 0;
-      const hh = 6 + (rand(28) | 0);
-      const shift = ((rand(80) - 40) * (1 + burst)) | 0;
-      try {
-        const slice = ctx.getImageData(0, y, w, hh);
-        ctx.putImageData(slice, shift, y);
-      } catch {
-        // getImageDataが遅い端末もあるので握りつぶす
-      }
+    if(Math.random() < 0.02 + burst*0.12){
+      drawLainLine();
     }
 
-    // blink mosaic
-    if (Math.random() < (0.05 + burst * 0.25)) {
+    if(Math.random() < 0.25){
+      randomScramble();
+    }
+
+    if(Math.random() < 0.05){
       blink.classList.add("on");
-      bctx.clearRect(0, 0, w, h);
-      bctx.globalAlpha = 0.15 + burst * 0.55;
-      // ざっくり矩形モザイク
-      for (let i = 0; i < 40 + burst * 120; i++) {
-        const x = rand(w);
-        const y = rand(h);
-        const ww = 6 + rand(90);
-        const hh = 6 + rand(60);
-        bctx.fillStyle = `rgba(255,255,255,${(0.06 + rand(0.18)).toFixed(3)})`;
-        bctx.fillRect(x, y, ww, hh);
-      }
-      setTimeout(() => {
-        blink.classList.remove("on");
-        bctx.clearRect(0, 0, w, h);
-      }, 60 + rand(120));
+      setTimeout(()=>blink.classList.remove("on"),60);
     }
 
-    // shadow apparition
-    if (shadowImg) {
-      const on = Math.random() < (0.02 + burst * 0.08 + glitch * 0.03);
-      shadowImg.classList.toggle("on", on);
-      if (on) {
-        shadowImg.style.transform = `translate(${(rand(10) - 5).toFixed(1)}px, ${(rand(10) - 5).toFixed(1)}px)`;
-      }
+    if(shadowImg){
+      shadowImg.classList.toggle("on", Math.random() < 0.03 + burst*0.08);
     }
 
-    // random text event
-    if (Math.random() < (0.010 + burst * 0.020)) {
-      const line = pickLine();
-      flashLine(line);
-      pushTrace(line);
-    }
-
-    // decay
-    burst = Math.max(0, burst - (0.010 + intensity * 0.008));
+    burst = Math.max(0, burst - 0.012);
   }
 
-  function loop() {
+  function loop(){
     draw();
     raf = requestAnimationFrame(loop);
   }
 
-  // ---- boot behavior ----
-  // まず “止まって見える” を防ぐ：ここまで来たらREADYを出す
+  DIAG("STATIC READY // ENABLE AUDIO");
   syncUI();
-  DIAG("STATIC READY // PRESS START");
-  showHint("STATIC READY");
 
-  // 自動起動はしない（事故防止）：
-  // ただし「前はログイン完了イベントで起動」したいならこれ
-  window.addEventListener("wired-user-ready", () => {
-    DIAG("WIRED USER READY");
-    start();
-  });
+  addEventListener("wired-user-ready", start);
 
-  // iOS: タッチでAudioもついでに解錠
-  const unlockOnce = () => {
-    try { window.WiredAudio?.start?.(); } catch {}
-    window.removeEventListener("pointerdown", unlockOnce);
-    window.removeEventListener("touchstart", unlockOnce);
-  };
-  window.addEventListener("pointerdown", unlockOnce, { passive: true });
-  window.addEventListener("touchstart", unlockOnce, { passive: true });
-
+  /* mobile unlock safety */
+  const unlockOnce = ()=>{ try{ window.WiredAudio?.start?.(); }catch{} };
+  addEventListener("pointerdown", unlockOnce, { once:true, passive:true });
+  addEventListener("touchstart", unlockOnce, { once:true, passive:true });
 })();
