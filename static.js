@@ -3,219 +3,163 @@
    full replace static.js (stable + UI scramble + louder audio)
 ========================================================= */
 
-const $ = (s) => document.querySelector(s);
-const Timeout = (fn, ms) => window.setTimeout(fn, ms);
+// static.js (safe full replace)
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const on = (el, ev, fn, opt) => { if (el) el.addEventListener(ev, fn, opt); };
 
-/* ---------- DOM ---------- */
-const badge = $("#diag");
-const uiHint = $("#uiHint");
+  const loading = $("#loading");
+  const statusEl = $("#statusText") || $("#status") || $("#diag");
 
-const canvas = $("#staticCanvas");
-const ctx = canvas?.getContext("2d", { alpha: false });
+  const setStatus = (t) => { if (statusEl) statusEl.textContent = t; };
+  const hideLoading = () => { if (loading) loading.classList.add("hidden"); };
 
-const blinkCanvas = $("#blinkLayer");
-const bctx = blinkCanvas?.getContext("2d", { alpha: true });
+  // always unfreeze LOADING even if anything fails
+  const safe = async (fn) => {
+    try { await fn(); }
+    catch (e) {
+      console.error("[STATIC] ERR", e);
+      setStatus("ERR // " + (e?.message || e));
+    }
+    finally {
+      hideLoading();
+    }
+  };
 
-const bgVideo = $("#bgVideo");
-const shadowImg = $("#shadowImg");
+  // canvas setup (optional)
+  const canvas = $("#staticCanvas");
+  const ctx = canvas?.getContext?.("2d", { alpha: false });
 
-const btnEnable = $("#btnEnable");
-const btnToggle = $("#btnToggle");
-const btnBurst  = $("#btnBurst");
-const btnCalm   = $("#btnCalm");
-const btnUI     = $("#btnUI");
+  const blinkCanvas = $("#blinkLayer");
+  const bctx = blinkCanvas?.getContext?.("2d", { alpha: true });
 
-const vIntensity = $("#vIntensity");
-const vGlitch    = $("#vGlitch");
-const aVol       = $("#aVol");
-const aTone      = $("#aTone");
+  const bgVideo = $("#bgVideo");       // optional
+  const shadowImg = $("#shadowImg");   // optional
 
-if (!canvas || !ctx){
-  throw new Error("staticCanvas not found or 2D context failed");
-}
+  // buttons (optional)
+  const btnEnable = $("#btnEnable");
+  const btnToggle = $("#btnToggle");
+  const btnBurst  = $("#btnBurst");
+  const btnCalm   = $("#btnCalm");
+  const btnUI     = $("#btnUI");
 
-function logDiag(msg){
-  try{
-    if (badge) badge.textContent = msg;
-    console.log(msg);
-  }catch{}
-}
+  // state
+  let enabled = false;
+  let burst = 0;
+  let uiOn = true;
+  let rafId = 0;
 
-/* =========================================================
-   UI TOGGLE
-========================================================= */
-const UI_KEY = "wired_static_ui_off_v1";
-
-function hintOnce(){
-  if (!uiHint) return;
-  uiHint.classList.add("on");
-  Timeout(()=> uiHint.classList.remove("on"), 650);
-}
-
-function UIOff(off, showHint=false){
-  document.body.classList.toggle("ui-off", !!off);
-  try{ localStorage.setItem(UI_KEY, off ? "1" : "0"); }catch{}
-  if (btnUI) btnUI.textContent = off ? "UI: OFF" : "UI: ON";
-  if (showHint) hintOnce();
-}
-
-function getUIOff(){
-  try{ return (localStorage.getItem(UI_KEY) === "1"); }catch{ return false; }
-}
-
-UIOff(getUIOff(), false);
-
-btnUI?.addEventListener("click", ()=>{
-  const off = !document.body.classList.contains("ui-off");
-  UIOff(off, off);
-});
-
-/* =========================================================
-   AUDIO (iOS SAFE)
-========================================================= */
-let audioCtx = null;
-let master = null;
-let noiseSrc = null;
-let noiseGain = null;
-let humOsc = null;
-let humGain = null;
-let filterLP = null;
-let filterHP = null;
-let wobbleOsc = null;
-let wobbleGain = null;
-let comp = null;
-
-function makeNoiseBuffer(ac){
-  const seconds = 2;
-  const buffer = ac.createBuffer(1, ac.sampleRate * seconds, ac.sampleRate);
-  const arr = buffer.getChannelData(0);
-
-  let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
-  for (let i=0;i<arr.length;i++){
-    const white = Math.random()*2-1;
-    b0 = 0.99886*b0 + white*0.0555179;
-    b1 = 0.99332*b1 + white*0.0750759;
-    b2 = 0.96900*b2 + white*0.1538520;
-    b3 = 0.86650*b3 + white*0.3104856;
-    b4 = 0.55000*b4 + white*0.5329522;
-    b5 = -0.7616*b5 - white*0.0168980;
-    const pink = (b0+b1+b2+b3+b4+b5+b6 + white*0.5362) * 0.11;
-    b6 = white*0.115926;
-    arr[i] = pink;
+  function resize() {
+    const w = Math.max(1, window.innerWidth);
+    const h = Math.max(1, window.innerHeight);
+    if (canvas) { canvas.width = w; canvas.height = h; }
+    if (blinkCanvas) { blinkCanvas.width = w; blinkCanvas.height = h; }
   }
-  return buffer;
-}
 
-function ensureAudio(){
-  if (audioCtx) return;
+  function rand(n) { return Math.random() * n; }
 
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  function drawNoise() {
+    if (!enabled) return;
 
-  master = audioCtx.createGain();
-  master.gain.value = 0.0;
-
-  noiseSrc = audioCtx.createBufferSource();
-  noiseSrc.buffer = makeNoiseBuffer(audioCtx);
-  noiseSrc.loop = true;
-
-  noiseGain = audioCtx.createGain();
-  noiseGain.gain.value = 0.26;
-
-  humOsc = audioCtx.createOscillator();
-  humOsc.type = "sine";
-  humOsc.frequency.value = 50;
-
-  humGain = audioCtx.createGain();
-  humGain.gain.value = 0.06;
-
-  filterHP = audioCtx.createBiquadFilter();
-  filterHP.type = "highpass";
-  filterHP.frequency.value = 80;
-
-  filterLP = audioCtx.createBiquadFilter();
-  filterLP.type = "lowpass";
-  filterLP.frequency.value = 2200;
-
-  wobbleOsc = audioCtx.createOscillator();
-  wobbleOsc.type = "sine";
-  wobbleOsc.frequency.value = 0.22;
-
-  wobbleGain = audioCtx.createGain();
-  wobbleGain.gain.value = 12;
-
-  wobbleOsc.connect(wobbleGain);
-  wobbleGain.connect(humOsc.frequency);
-
-  const mix = audioCtx.createGain();
-  noiseSrc.connect(noiseGain); noiseGain.connect(mix);
-  humOsc.connect(humGain); humGain.connect(mix);
-
-  mix.connect(filterHP);
-  filterHP.connect(filterLP);
-  filterLP.connect(master);
-
-  comp = audioCtx.createDynamicsCompressor();
-  comp.threshold.value = -20;
-  comp.knee.value = 14;
-  comp.ratio.value = 10;
-  comp.attack.value = 0.003;
-  comp.release.value = 0.14;
-
-  master.connect(comp);
-  comp.connect(audioCtx.destination);
-
-  noiseSrc.start();
-  humOsc.start();
-  wobbleOsc.start();
-}
-
-function applyAudioParams(){
-  if (!audioCtx) return;
-
-  const vol = Number(aVol?.value ?? 26) / 100;
-  const tone = Number(aTone?.value ?? 36) / 100;
-
-  master.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.03);
-  filterLP.frequency.setTargetAtTime(900 + tone * 5200, audioCtx.currentTime, 0.05);
-  filterHP.frequency.setTargetAtTime(60 + (1-tone) * 140, audioCtx.currentTime, 0.05);
-}
-
-aVol?.addEventListener("input", applyAudioParams);
-aTone?.addEventListener("input", applyAudioParams);
-
-/* ===== iOS AUDIO UNLOCK (CRITICAL FIX) ===== */
-let audioUnlocked = false;
-
-async function unlockAudioOnce(){
-  if (audioUnlocked) return;
-  audioUnlocked = true;
-
-  try{
-    ensureAudio();
-    await audioCtx.resume();
-
-    // ★ 修正点：ここで初めて鳴らす
-    window.WiredAudio?.staticNoise?.();
-
-    if (master && master.gain.value === 0){
-      master.gain.value = 0.18;
+    if (ctx && canvas) {
+      // cheap noise (no getImageData loop)
+      const w = canvas.width, h = canvas.height;
+      const count = 120 + Math.floor(burst * 220);
+      for (let i = 0; i < count; i++) {
+        const x = rand(w), y = rand(h);
+        const ww = 1 + rand(3), hh = 1 + rand(3);
+        const a = 0.04 + rand(0.12) + burst * 0.18;
+        ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
+        ctx.fillRect(x, y, ww, hh);
+      }
+      // fade layer
+      ctx.fillStyle = "rgba(0,0,0,0.16)";
+      ctx.fillRect(0, 0, w, h);
     }
 
-    if (btnEnable) btnEnable.textContent = "AUDIO READY";
-  }catch(e){
-    console.warn("unlockAudioOnce failed:", e);
-    audioUnlocked = false;
+    if (bctx && blinkCanvas) {
+      const w = blinkCanvas.width, h = blinkCanvas.height;
+      // occasional blink
+      if (Math.random() < (0.02 + burst * 0.08)) {
+        bctx.clearRect(0, 0, w, h);
+        bctx.fillStyle = `rgba(255,255,255,${(0.12 + burst * 0.25).toFixed(3)})`;
+        bctx.fillRect(0, 0, w, h);
+        setTimeout(() => bctx.clearRect(0,0,w,h), 50 + rand(90));
+      }
+    }
+
+    // shadow apparition (optional)
+    if (shadowImg) {
+      shadowImg.style.opacity = (Math.random() < (0.012 + burst * 0.05)) ? "0.12" : "0";
+    }
+
+    // decay burst
+    burst = Math.max(0, burst - 0.012);
   }
-}
 
-window.addEventListener("pointerdown", unlockAudioOnce, { passive:true });
-window.addEventListener("touchstart", unlockAudioOnce, { passive:true });
-btnEnable?.addEventListener("click", unlockAudioOnce);
+  function loop() {
+    drawNoise();
+    rafId = requestAnimationFrame(loop);
+  }
 
-/* =========================================================
-   LOOP (visual only / unchanged)
-========================================================= */
-function loop(){
-  requestAnimationFrame(loop);
-}
-loop();
+  function start() {
+    if (enabled) return;
+    enabled = true;
+    setStatus("STATIC // ONLINE");
+    try { window.WiredAudio?.staticNoise?.(); } catch {}
+  }
+
+  function stop() {
+    enabled = false;
+    setStatus("STATIC // STANDBY");
+  }
+
+  function toggle() {
+    enabled ? stop() : start();
+  }
+
+  function burstNow() {
+    burst = Math.min(1, burst + 0.35);
+    try { window.WiredAudio?.burst?.(); } catch {}
+  }
+
+  function calm() {
+    burst = 0;
+    try { window.WiredAudio?.calm?.(); } catch {}
+  }
+
+  function toggleUI() {
+    uiOn = !uiOn;
+    document.documentElement.classList.toggle("ui-off", !uiOn);
+  }
+
+  // init
+  safe(async () => {
+    resize();
+    on(window, "resize", resize, { passive: true });
+
+    // buttons: also accept pointerdown for iOS
+    on(btnEnable, "click", () => start());
+    on(btnEnable, "pointerdown", () => start(), { passive: true });
+
+    on(btnToggle, "click", () => toggle());
+    on(btnToggle, "pointerdown", () => toggle(), { passive: true });
+
+    on(btnBurst, "click", () => burstNow());
+    on(btnBurst, "pointerdown", () => burstNow(), { passive: true });
+
+    on(btnCalm, "click", () => calm());
+    on(btnCalm, "pointerdown", () => calm(), { passive: true });
+
+    on(btnUI, "click", () => toggleUI());
+    on(btnUI, "pointerdown", () => toggleUI(), { passive: true });
+
+    // scroll boosts burst
+    on(window, "scroll", () => { burst = Math.min(1, burst + 0.08); }, { passive: true });
+
+    // kick loop
+    if (!rafId) loop();
+
+    setStatus("LOADED // STATIC READY");
+  });
+})();
