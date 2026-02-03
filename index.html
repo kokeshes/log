@@ -198,11 +198,16 @@
     <div id="status" class="footer-right">BOOTING…</div>
   </footer>
 
-  <script type="module" src="./app.js"></script>
-  <script type="module" src="./noise.js"></script>
-  <script type="module" src="./crt.js"></script>
-  <script type="module" src="./ps1.js"></script>
-  <script src="./audio.js"></script>
+<script src="./audio.js"></script>
+<script type="module" src="./app.js"></script>
+<script type="module" src="./noise.js"></script>
+<script type="module" src="./crt.js"></script>
+<script type="module" src="./ps1.js"></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("./sw.js");
+  }
+</script>
  <!---
   <script>
     if ("serviceWorker" in navigator) {
