@@ -1,6 +1,6 @@
 // docs/audio.js
-// THE WIRED - always-on hum/noise (iOS-safe)
-// Exposes window.WiredAudio with: start(), stop(), bootSound(), saveSound(), errorSound(), staticNoise()
+// THE WIRED - always-on hum/noise (iOS-safe, stable)
+// Exposes window.WiredAudio with: start(), stop(), bootSound(), saveSound(), errorSound(), staticNoise(), burst(), calm()
 
 (() => {
   const API = {};
@@ -19,6 +19,7 @@
   let started = false;
   let unlocked = false;
 
+  // ----- init graph -----
   function ensure() {
     if (ac) return;
 
@@ -29,20 +30,21 @@
 
     hp = ac.createBiquadFilter();
     hp.type = "highpass";
-    hp.frequency.value = 60;
+    hp.frequency.value = 70;
 
     lp = ac.createBiquadFilter();
     lp.type = "lowpass";
     lp.frequency.value = 1600;
 
+    // master -> filters -> out
     master.connect(hp);
     hp.connect(lp);
     lp.connect(ac.destination);
 
-    // hum
+    // hum osc
     humOsc = ac.createOscillator();
     humOsc.type = "sine";
-    humOsc.frequency.value = 50;
+    humOsc.frequency.value = 50; // JP-ish hum
 
     humGain = ac.createGain();
     humGain.gain.value = 0.045;
@@ -50,7 +52,7 @@
     humOsc.connect(humGain);
     humGain.connect(master);
 
-    // noise buffer
+    // noise buffer (loop)
     const buf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
     const arr = buf.getChannelData(0);
     for (let i = 0; i < arr.length; i++) {
@@ -81,6 +83,7 @@
     if (!ac || !master) return;
     const t = ac.currentTime;
     master.gain.cancelScheduledValues(t);
+    // setTargetAtTime: smooth
     master.gain.setTargetAtTime(vol, t, ms / 1000);
   }
 
@@ -97,14 +100,15 @@
     lp.frequency.value = 1600;
     noiseGain.gain.value = 0.02;
 
+    // "always-on hum" level
     fadeTo(0.22, 220);
   }
 
-  function blip(freq = 880, dur = 0.05, gain = 0.06) {
-    if (!ac) return;
+  function blip(freq = 880, dur = 0.05, gain = 0.06, type = "square") {
+    if (!ac || !master) return;
     const o = ac.createOscillator();
     const g = ac.createGain();
-    o.type = "square";
+    o.type = type;
     o.frequency.value = freq;
     g.gain.value = gain;
     o.connect(g);
@@ -114,8 +118,16 @@
     o.stop(t + dur);
   }
 
-  API.start = async () => { await unlock(); startLoop(); };
-  API.stop  = () => { fadeTo(0.0, 220); };
+  // ----- public API -----
+  API.start = async () => {
+    await unlock();
+    startLoop();
+  };
+
+  API.stop = () => {
+    // keep graph but mute
+    fadeTo(0.0, 220);
+  };
 
   API.bootSound = async () => {
     await API.start();
@@ -124,7 +136,7 @@
 
   API.errorSound = async () => {
     await API.start();
-    try { blip(170, 0.08, 0.07); } catch {}
+    try { blip(170, 0.08, 0.07, "sawtooth"); } catch {}
     if (!ac) return;
     lp.frequency.setTargetAtTime(900, ac.currentTime, 0.04);
     noiseGain.gain.setTargetAtTime(0.07, ac.currentTime, 0.04);
@@ -154,19 +166,35 @@
     noiseGain.gain.setTargetAtTime(0.05, ac.currentTime, 0.08);
   };
 
+  // for static room / bursts
+  API.burst = async () => {
+    await API.start();
+    if (!ac) return;
+    noiseGain.gain.setTargetAtTime(0.14, ac.currentTime, 0.04);
+    lp.frequency.setTargetAtTime(3200, ac.currentTime, 0.05);
+    setTimeout(() => {
+      if (!ac) return;
+      noiseGain.gain.setTargetAtTime(0.02, ac.currentTime, 0.09);
+      lp.frequency.setTargetAtTime(1600, ac.currentTime, 0.09);
+    }, 220);
+  };
+
+  API.calm = async () => {
+    await API.start();
+    if (!ac) return;
+    noiseGain.gain.setTargetAtTime(0.015, ac.currentTime, 0.10);
+    lp.frequency.setTargetAtTime(1200, ac.currentTime, 0.10);
+  };
+
   window.WiredAudio = API;
 
-  // mobile requires gesture
-  const unlockOnce = async () => {
-    await API.start();
-    document.removeEventListener("pointerdown", unlockOnce);
-    document.removeEventListener("touchstart", unlockOnce);
-    document.removeEventListener("keydown", unlockOnce);
-  };
-  document.addEventListener("pointerdown", unlockOnce, { passive: true });
-  document.addEventListener("touchstart", unlockOnce, { passive: true });
-  document.addEventListener("keydown", unlockOnce);
-
-  // desktop: attempt autostart
-  setTimeout(() => { API.start().catch(() => {}); }, 600);
+  /**
+   * IMPORTANT:
+   * iOS/PWAは「ユーザー操作内で start/resume」が必須。
+   * → audio.js側で勝手に autostart しない（ブロック→無音化の原因になりやすい）
+   *
+   * 代わりに index.html で:
+   * window.addEventListener("pointerdown", () => WiredAudio.start(), {once:true});
+   * を置くのが最も安定。
+   */
 })();
