@@ -33,7 +33,7 @@
     // added
     "make me sad",
     "make me mad",
-    "make me feel alright",
+    "make me feel alright?",
   ];
 
   const TRACE_KEY = "wired_static_trace";
