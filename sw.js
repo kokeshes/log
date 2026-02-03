@@ -1,7 +1,7 @@
 /* sw.js — THE WIRED LOG
    cache bust: bump CACHE_NAME when you change core files
-*/
-const CACHE_NAME = "wired-log-v11";
+*/2
+const CACHE_NAME = "wired-log-v12";
 const CORE = [
   "./",
   "./index.html",
