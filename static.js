@@ -9,7 +9,7 @@
   const diag = $("#diag");
 
   const ctx = canvas.getContext("2d", { alpha:false });
-  const bctx = blink.getContext("2d", { alpha:true });
+  const bctx = blink.getContext("2d", { alpha:true }); // bctxは今は未使用だけど残す
 
   const btnEnable = $("#btnEnable");
   const btnToggle = $("#btnToggle");
@@ -82,32 +82,57 @@
   }
 
   /* =========================
-     TEXT SCRAMBLE (DOM)
+     TEXT SCRAMBLE (DOM)  ✅SAFE
+     - 絶対に label/button など “コンテナ” を textContent で潰さない
+     - data-ui-scramble / data-scramble のテキスト専用ノードだけ触る
   ========================= */
   const SCRAMBLE_CHARS = "▓▒░█#@$%&*+-=/\\<>";
 
-  const scrambleTargets = $$(
-    ".wired-scramble,[data-ui-scramble='1'],[data-scramble='1']"
-  ).map(el => ({
-    el,
-    original: el.textContent
-  }));
+  // 対象: data-ui-scramble / data-scramble のみ（.wired-scramble は触らない）
+  // さらに form/control 系は除外（念のため）
+  const BLOCK_TAG = /^(INPUT|TEXTAREA|SELECT|BUTTON|A|LABEL)$/i;
+
+  function buildScrambleTargets(){
+    const els = $$("[data-ui-scramble='1'],[data-scramble='1']")
+      .filter(el => !BLOCK_TAG.test(el.tagName));
+
+    return els.map(el => {
+      // 初回だけオリジナルを保存（あとで戻す用）
+      if (el.dataset.__origText == null) {
+        el.dataset.__origText = el.textContent ?? "";
+      }
+      return { el };
+    });
+  }
 
   function scrambleOnce(target){
-    const { el, original } = target;
+    const el = target.el;
+    const original = el.dataset.__origText ?? (el.textContent ?? "");
     const len = original.length;
+
+    // 空や短すぎるものはスキップ（無駄にチカチカしない）
+    if (len <= 0) return;
+
     let scrambled = "";
     for(let i=0;i<len;i++){
       scrambled += SCRAMBLE_CHARS[(Math.random()*SCRAMBLE_CHARS.length)|0];
     }
+
     el.textContent = scrambled;
-    setTimeout(()=>{ el.textContent = original; }, 40 + Math.random()*80);
+
+    // すぐ戻す
+    setTimeout(() => {
+      // origが変わってる可能性もあるので dataset を優先
+      el.textContent = (el.dataset.__origText ?? original);
+    }, 40 + Math.random()*80);
   }
 
   function randomScramble(){
-    if(Math.random() < 0.35){
-      const t = scrambleTargets[(Math.random()*scrambleTargets.length)|0];
-      if(t) scrambleOnce(t);
+    if (Math.random() < 0.35){
+      const targets = buildScrambleTargets();
+      if (!targets.length) return;
+      const t = targets[(Math.random()*targets.length)|0];
+      if (t) scrambleOnce(t);
     }
   }
 
@@ -120,7 +145,6 @@
     if(aVol) volume = aVol.value/100;
     if(aTone) tone = aTone.value/100;
 
-    // audio.js 側に set() が無くても死なない
     try{ window.WiredAudio?.set?.({ volume, tone }); }catch{}
   }
 
@@ -173,7 +197,6 @@
   const press = (el, fn) => {
     if(!el) return;
     el.addEventListener("pointerdown", (e) => {
-      // ✅ UIが勝手に消える・スクロール扱いになるのを防ぐ
       e.preventDefault();
       e.stopPropagation();
       fn(e);
@@ -190,16 +213,13 @@
       DIAG("AUDIO UNLOCK…");
       await window.WiredAudio.start?.();
 
-      // 一旦“静的ノイズ用”へ
       await window.WiredAudio.staticNoise?.();
 
-      // 音量反映（setが無くてもOK）
       syncUI();
 
       // UIは絶対ONに戻す（事故防止）
       setUI(true);
 
-      // 状態表示（AudioContextが見えない場合もあるので try）
       let st = "OK";
       try{
         const ac = window.WiredAudio.__ac;
@@ -274,7 +294,7 @@
   document.addEventListener("visibilitychange", async () => {
     if(document.visibilityState !== "visible") return;
     try{
-      await window.WiredAudio?.start?.(); // resume
+      await window.WiredAudio?.start?.();
     }catch{}
   });
 })();
