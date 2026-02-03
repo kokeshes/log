@@ -1,11 +1,16 @@
 // docs/audio.js
 // THE WIRED - always-on hum/noise (iOS-safe)
 // window.WiredAudio: start(), stop(), bootSound(), saveSound(), errorSound(), staticNoise(), burst(), calm(), set({volume,tone})
+//
+// ✅ louder overall + soft clipper to reduce harsh clipping
 
 (() => {
   const API = {};
   let ac = null;
-  let master = null;
+
+  let master = null;     // main gain (volume knob)
+  let clip = null;       // soft clipper
+  let post = null;       // post gain (final trim)
 
   let humOsc = null;
   let humGain = null;
@@ -19,17 +24,44 @@
   let started = false;
   let unlocked = false;
 
-  // params
-  let _vol = 0.26;  // 0..1
-  let _tone = 0.36; // 0..1
+  // params (UI sends 0..1)
+  let _vol = 0.26;   // 0..1
+  let _tone = 0.36;  // 0..1
+
+  // --- helpers ---
+  const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
+  function makeSoftClipper(ctx, amount = 0.65) {
+    // amount: 0..1 (higher = more limiting)
+    const n = 1024;
+    const shaper = ctx.createWaveShaper();
+    const curve = new Float32Array(n);
+
+    // gentle tanh-like curve
+    const k = 1 + amount * 14; // 1..15
+    for (let i = 0; i < n; i++) {
+      const x = (i * 2) / (n - 1) - 1; // -1..1
+      curve[i] = Math.tanh(k * x) / Math.tanh(k);
+    }
+
+    shaper.curve = curve;
+    shaper.oversample = "4x";
+    return shaper;
+  }
 
   function ensure() {
     if (ac) return;
 
     ac = new (window.AudioContext || window.webkitAudioContext)();
 
+    // master -> clip -> post -> filters -> destination
     master = ac.createGain();
     master.gain.value = 0.0;
+
+    clip = makeSoftClipper(ac, 0.60);
+
+    post = ac.createGain();
+    post.gain.value = 0.92; // final trim to keep it pleasant even when loud
 
     hp = ac.createBiquadFilter();
     hp.type = "highpass";
@@ -39,26 +71,28 @@
     lp.type = "lowpass";
     lp.frequency.value = 1600;
 
-    master.connect(hp);
+    master.connect(clip);
+    clip.connect(post);
+    post.connect(hp);
     hp.connect(lp);
     lp.connect(ac.destination);
 
-    // hum
+    // hum (slightly louder base)
     humOsc = ac.createOscillator();
     humOsc.type = "sine";
     humOsc.frequency.value = 50;
 
     humGain = ac.createGain();
-    humGain.gain.value = 0.045;
+    humGain.gain.value = 0.06; // was 0.045
 
     humOsc.connect(humGain);
     humGain.connect(master);
 
-    // noise buffer
+    // noise buffer (slightly hotter)
     const buf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
     const arr = buf.getChannelData(0);
     for (let i = 0; i < arr.length; i++) {
-      arr[i] = (Math.random() * 2 - 1) * 0.35;
+      arr[i] = (Math.random() * 2 - 1) * 0.48; // was 0.35
     }
 
     noiseSrc = ac.createBufferSource();
@@ -66,7 +100,7 @@
     noiseSrc.loop = true;
 
     noiseGain = ac.createGain();
-    noiseGain.gain.value = 0.02;
+    noiseGain.gain.value = 0.045; // was 0.02
 
     noiseSrc.connect(noiseGain);
     noiseGain.connect(master);
@@ -77,20 +111,20 @@
   function applyParams() {
     if (!ac) return;
 
-    // volume: master target
-    const targetVol = Math.max(0, Math.min(1, _vol));
-    // tone: map 0..1 -> filters
-    const t = Math.max(0, Math.min(1, _tone));
-    const lpHz = 900 + t * 2600;   // 900..3500
-    const hpHz = 40 + (1 - t) * 120; // 160..40-ish (低域残す/削る)
+    const targetVol = clamp01(_vol);
+    const t = clamp01(_tone);
+
+    // tone mapping (keep your idea, slightly widened)
+    const lpHz = 900 + t * 3000;       // 900..3900
+    const hpHz = 35 + (1 - t) * 140;   // 175..35 (low end varies)
 
     try {
       lp.frequency.setTargetAtTime(lpHz, ac.currentTime, 0.04);
       hp.frequency.setTargetAtTime(hpHz, ac.currentTime, 0.04);
     } catch {}
 
-    // keep hum subtle
-    try { humGain.gain.value = 0.03 + targetVol * 0.06; } catch {}
+    // hum tracks volume but stays under control
+    try { humGain.gain.value = 0.05 + targetVol * 0.10; } catch {} // was smaller
   }
 
   async function unlock() {
@@ -105,6 +139,7 @@
     if (!ac || !master) return;
     const t = ac.currentTime;
     master.gain.cancelScheduledValues(t);
+    // setTargetAtTime's "timeConstant" expects seconds, so keep similar behavior
     master.gain.setTargetAtTime(vol, t, ms / 1000);
   }
 
@@ -116,16 +151,18 @@
     try { humOsc.start(); } catch {}
     try { noiseSrc.start(); } catch {}
 
-    // base texture
+    // base texture (a bit louder by default)
     hp.frequency.value = 70;
     lp.frequency.value = 1600;
-    noiseGain.gain.value = 0.02;
+    noiseGain.gain.value = 0.05; // was 0.02
 
-    // bring up
-    fadeTo(Math.max(0.12, Math.min(0.45, _vol + 0.06)), 220);
+    // louder overall: map _vol to master gain with higher ceiling
+    // UI 0.26 -> about 0.38 (audible), max around 0.72 but clipped softly
+    const base = 0.22 + clamp01(_vol) * 0.50; // 0.22..0.72
+    fadeTo(base, 220);
   }
 
-  function blip(freq = 880, dur = 0.05, gain = 0.06) {
+  function blip(freq = 880, dur = 0.05, gain = 0.08) {
     if (!ac) return;
     const o = ac.createOscillator();
     const g = ac.createGain();
@@ -143,8 +180,12 @@
     if (typeof volume === "number") _vol = volume;
     if (typeof tone === "number") _tone = tone;
     applyParams();
-    // master gain also tracks volume when already started
-    if (ac && started) fadeTo(Math.max(0.12, Math.min(0.55, _vol + 0.06)), 120);
+
+    // master gain follows volume even after start (louder curve)
+    if (ac && started) {
+      const base = 0.22 + clamp01(_vol) * 0.50; // 0.22..0.72
+      fadeTo(base, 120);
+    }
   };
 
   API.start = async () => {
@@ -157,60 +198,68 @@
 
   API.bootSound = async () => {
     await API.start();
-    try { blip(520, 0.05, 0.05); blip(760, 0.05, 0.04); } catch {}
+    try { blip(520, 0.05, 0.08); blip(760, 0.05, 0.07); } catch {}
   };
 
   API.errorSound = async () => {
     await API.start();
-    try { blip(170, 0.08, 0.07); } catch {}
+    try { blip(170, 0.08, 0.11); } catch {}
     if (!ac) return;
+
+    // harsher noise hit
     lp.frequency.setTargetAtTime(900, ac.currentTime, 0.04);
-    noiseGain.gain.setTargetAtTime(0.07, ac.currentTime, 0.04);
+    noiseGain.gain.setTargetAtTime(0.18, ac.currentTime, 0.04);
     setTimeout(() => {
       if (!ac) return;
       lp.frequency.setTargetAtTime(1600, ac.currentTime, 0.08);
-      noiseGain.gain.setTargetAtTime(0.02, ac.currentTime, 0.08);
-    }, 240);
+      noiseGain.gain.setTargetAtTime(0.07, ac.currentTime, 0.08);
+    }, 260);
   };
 
   API.saveSound = async () => {
     await API.start();
-    try { blip(980, 0.04, 0.05); } catch {}
+    try { blip(980, 0.05, 0.09); } catch {}
     if (!ac) return;
-    lp.frequency.setTargetAtTime(2600, ac.currentTime, 0.04);
-    noiseGain.gain.setTargetAtTime(0.11, ac.currentTime, 0.05);
+
+    lp.frequency.setTargetAtTime(3000, ac.currentTime, 0.04);
+    noiseGain.gain.setTargetAtTime(0.22, ac.currentTime, 0.05);
     setTimeout(() => {
       if (!ac) return;
       lp.frequency.setTargetAtTime(1600, ac.currentTime, 0.09);
-      noiseGain.gain.setTargetAtTime(0.02, ac.currentTime, 0.09);
+      noiseGain.gain.setTargetAtTime(0.07, ac.currentTime, 0.10);
     }, 320);
   };
 
   API.staticNoise = async () => {
     await API.start();
     if (!ac) return;
-    noiseGain.gain.setTargetAtTime(0.06, ac.currentTime, 0.08); // slightly louder
+    noiseGain.gain.setTargetAtTime(0.11, ac.currentTime, 0.08); // was ~0.06
   };
 
   API.burst = async () => {
     await API.start();
     if (!ac) return;
-    noiseGain.gain.setTargetAtTime(0.12, ac.currentTime, 0.03);
+
+    noiseGain.gain.setTargetAtTime(0.28, ac.currentTime, 0.03); // punch
     setTimeout(() => {
       if (!ac) return;
-      noiseGain.gain.setTargetAtTime(0.06, ac.currentTime, 0.06);
+      noiseGain.gain.setTargetAtTime(0.11, ac.currentTime, 0.08);
     }, 180);
   };
 
   API.calm = async () => {
     await API.start();
     if (!ac) return;
-    noiseGain.gain.setTargetAtTime(0.02, ac.currentTime, 0.12);
+
+    noiseGain.gain.setTargetAtTime(0.04, ac.currentTime, 0.14);
     setTimeout(() => {
       if (!ac) return;
-      noiseGain.gain.setTargetAtTime(0.06, ac.currentTime, 0.18);
+      noiseGain.gain.setTargetAtTime(0.11, ac.currentTime, 0.20);
     }, 420);
   };
+
+  // debug hook (optional)
+  API.__ac = () => ac;
 
   window.WiredAudio = API;
 
