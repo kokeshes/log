@@ -1,36 +1,7 @@
-// docs/app.js
-import { getSupabase } from "./supabase.js";
+// app.js
+import { getSupabase, resetSupabase } from "./supabase.js";
 
-const sb = getSupabase();
-
-async function selectLogsOnce(){
-  return await sb
-    .from("logs")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(200);
-}
-
-async function selectLogsSafe(){
-  // まず普通に取得
-  let res = await selectLogsOnce();
-  if (!res.error) return res;
-
-  const status = res.error?.status || res.status;
-
-  // 401/403 のときだけ refresh → 1回だけ取り直す
-  if (status === 401 || status === 403){
-    const r = await sb.__refreshWithLock?.();
-    // 429等でrefreshできない時は、ここで即ログアウト扱いにしない
-    if (r?.error){
-      return res; // 元のエラーを返す（UI側で“再試行”に寄せる）
-    }
-    res = await selectLogsOnce();
-  }
-
-  return res;
-}
-
+const client = getSupabase();
 
 /* ========= helpers ========= */
 const $ = (s) => document.querySelector(s);
@@ -65,18 +36,19 @@ function escapeHtml(s) {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-function sb() { return getSupabase(); }
+function showToast(msg) {
+  // 雑にalertでも動くように（UIがあるなら差し替えてOK）
+  console.warn("[TOAST]", msg);
+}
 
 /* ========= PROBE (diagnostic) ========= */
 function logAuth(label, obj) {
-  try {
-    console.log(`[AUTH ${label}]`, obj ?? "");
-  } catch {}
+  try { console.log(`[AUTH ${label}]`, obj ?? ""); } catch {}
 }
 
 async function debugProbe(label) {
   try {
-    const { data, error } = await sb().auth.getSession();
+    const { data, error } = await client.auth.getSession();
     const has = !!data?.session;
     console.log(`[PROBE ${label}] session=`, has, data?.session?.user?.email, error || "");
     setStatus(`${label} // session=${has ? "YES" : "NO"}`);
@@ -237,11 +209,10 @@ function hookDraftAutosave() {
 
 /* ========= AUTH / SESSION (critical) ========= */
 /**
- * onSessionが多重に走るとUI・stateが競合し、結果「ログイン弾かれ」「ログ0」に見える挙動が起きる。
+ * セッション処理が多重に走ると UI/state が競合し「ログイン弾かれ」「ログ0」に見える。
  * → 直列化（ロック）
  */
 let sessionLock = Promise.resolve();
-
 function withSessionLock(fn) {
   sessionLock = sessionLock.then(fn).catch((e) => {
     console.error("[SESSION LOCK] ERR", e);
@@ -250,43 +221,44 @@ function withSessionLock(fn) {
 }
 
 async function getSessionSafe() {
-  const { data, error } = await sb().auth.getSession();
+  const { data, error } = await client.auth.getSession();
   if (error) throw error;
   return data?.session ?? null;
 }
 
-async function refreshThenGetSession() {
-  // NOTE:
-  // iOS(PWA) では短時間に refresh を連打すると不安定になりやすい。
-  // 基本はローカル session を読む → 必要そうなら 1回だけ refresh → 再取得。
-  const { data: s1, error: e1 } = await sb.auth.getSession();
-  if (e1) console.warn("[AUTH] getSession err", e1);
-  if (s1?.session) return s1.session;
+/**
+ * refresh は「必要時に1回だけ」。429を避けるため supabase.js 側の __refreshWithLock を使う。
+ */
+async function refreshIfNeeded() {
+  const { data } = await client.auth.getSession();
+  if (data?.session?.user) return data.session;
 
-  const { data: r1, error: re1 } = await sb.auth.refreshSession();
-  if (re1) {
-    console.warn("[AUTH] refreshSession err", re1);
-    return null;
-  }
-  return r1?.session || null;
+  // セッション無しのときだけ refresh 試行（ロック＋クールダウン付き）
+  const r = await client.__refreshWithLock?.();
+  if (r?.error) return null;
+
+  const { data: d2 } = await client.auth.getSession();
+  return d2?.session ?? null;
 }
 
-
-
 async function ensureSignedInOrThrow() {
-  const sess = await withSessionLock(() => refreshThenGetSession());
+  const sess = await withSessionLock(async () => {
+    // まず getSession、無ければ refreshIfNeeded（= lock付き）
+    const s1 = await getSessionSafe().catch(() => null);
+    if (s1?.user?.id) return s1;
+    return await refreshIfNeeded();
+  });
+
   if (!sess?.user?.id) throw new Error("NOT_SIGNED_IN");
   currentUser = sess.user;
   return sess;
 }
 
-
-
 /* ========= auth actions ========= */
 async function login() {
   setStatus("LOGIN…");
   try {
-    const { data, error } = await sb().auth.signInWithPassword({
+    const { data, error } = await client.auth.signInWithPassword({
       email: (emailEl?.value ?? "").trim(),
       password: passEl?.value ?? ""
     });
@@ -306,7 +278,7 @@ async function login() {
 async function signup() {
   setStatus("SIGNUP…");
   try {
-    const { error } = await sb().auth.signUp({
+    const { error } = await client.auth.signUp({
       email: (emailEl?.value ?? "").trim(),
       password: passEl?.value ?? ""
     });
@@ -323,7 +295,7 @@ async function signup() {
 
 async function logout() {
   setStatus("LOGOUT…");
-  try { await sb().auth.signOut(); } catch {}
+  try { await client.auth.signOut(); } catch {}
   uiSignedOut();
   setStatus("DISCONNECTED");
   glitchPulse();
@@ -375,56 +347,56 @@ function renderList(items) {
   }
 }
 
-/* ========= data ========= */
-async function fetchLogs({ retry = 1 } = {}) {
+function renderLogs(rows) {
+  cache = Array.isArray(rows) ? rows : [];
+  renderList(filteredList());
+}
+
+/* ========= data (NO refresh spam) ========= */
+async function selectLogsOnce() {
+  return await client
+    .from("logs")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(200);
+}
+
+async function selectLogsSafe() {
+  // まず普通に取得
+  let res = await selectLogsOnce();
+  if (!res.error) return res;
+
+  const status = res.error?.status || res.status;
+
+  // 401/403 のときだけ refresh → 1回だけ取り直す
+  if (status === 401 || status === 403) {
+    const r = await client.__refreshWithLock?.();
+    // 429等でrefreshできない時は、ここで即ログアウト扱いにしない
+    if (r?.error) return res;
+    res = await selectLogsOnce();
+  }
+
+  return res;
+}
+
+async function fetchLogs() {
   if (!currentUser) return;
 
   setStatus("SYNC…");
-  const client = sb();
 
-  // 読み取りは「401/トークン期限」っぽい時だけ refresh → 1回リトライ
-  const runOnce = async () => {
-    const { data, error } = await client
-      .from("logs")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(200);
+  try {
+    const res = await selectLogsSafe();
+    if (res.error) throw res.error;
 
-    if (error) throw error;
-    return data || [];
-  };
-
-  try{
-    const rows = await runOnce();
-    renderLogs(rows);
+    renderLogs(res.data || []);
     setStatus("OK");
-  }catch(err){
-    const msg = String(err?.message || "");
-    const code = err?.code || err?.status || err?.statusCode;
-
-    const looksAuth =
-      code === 401 || code === 403 ||
-      /jwt/i.test(msg) ||
-      /token/i.test(msg) ||
-      /not authorized/i.test(msg);
-
-    if (looksAuth && retry > 0){
-      console.warn("[SYNC] auth-ish error, trying refreshSession then retry", err);
-      await withSessionLock(async () => {
-        try{ await client.auth.refreshSession(); }catch(e){ console.warn("[AUTH] refresh failed", e); }
-      });
-      // getSession を取り直して currentUser を更新
-      try{ await ensureSignedInOrThrow(); }catch(_){ /* ignore */ }
-      return fetchLogs({ retry: retry - 1 });
-    }
-
+  } catch (err) {
     console.warn("[SYNC] fetchLogs failed", err);
-    setStatus("OFFLINE?");
-    // ここで即サインアウト/強制リダイレクトはしない（iOSで誤判定が起きやすい）
-    showToast("SYNC 失敗: ネットワーク/認証を確認してください");
+    setStatus("SYNC FAILED // RETRY");
+    showToast("SYNC 失敗: ネットワーク混雑/認証(429含む)の可能性。少し待って再試行。");
+    // ここで uiSignedOut() しない（誤ログアウトを防ぐ）
   }
 }
-
 
 /* ========= editor ========= */
 function openEditor(it) {
@@ -484,17 +456,17 @@ async function saveCurrent({ retry = 1 } = {}) {
     };
 
     if (!selected.id) {
-      const { error } = await sb().from("logs").insert(payload);
+      const { error } = await client.from("logs").insert(payload);
       if (error) throw error;
     } else {
-      const { error } = await sb().from("logs").update(payload).eq("id", selected.id);
+      const { error } = await client.from("logs").update(payload).eq("id", selected.id);
       if (error) throw error;
     }
 
     clearDraft();
     try { window.WiredAudio?.saveSound?.(); } catch {}
 
-    await fetchLogs({ retry: 1 });
+    await fetchLogs();
     newEditor(payload.kind);
 
     setStatus("READY // NEXT LOG");
@@ -503,11 +475,10 @@ async function saveCurrent({ retry = 1 } = {}) {
   } catch (e) {
     console.error(e);
 
-    if (String(e?.message || "").includes("SESSION EXPIRED")) {
-      setStatus("SESSION LOST // RELOGIN");
-      try { window.WiredAudio?.errorSound?.(); } catch {}
-      alert("セッションが切れています。再ログインしてください。\n（本文は下書きとして保持されています）");
-      uiSignedOut();
+    // ここで「即ログアウト」はやめる（429/一時不調で弾かれるのを防ぐ）
+    if (String(e?.status || "").includes("429") || String(e?.message || "").includes("429")) {
+      setStatus("RATE LIMITED // WAIT");
+      alert("混雑(429)のため保存に失敗しました。\n本文は下書きとして保持されています。\n少し待って再試行してください。");
       return;
     }
 
@@ -533,11 +504,11 @@ async function deleteCurrent() {
   try {
     await ensureSignedInOrThrow();
 
-    const { error } = await sb().from("logs").delete().eq("id", selected.id);
+    const { error } = await client.from("logs").delete().eq("id", selected.id);
     if (error) throw error;
 
     clearDraft();
-    await fetchLogs({ retry: 1 });
+    await fetchLogs();
     newEditor();
     setStatus("DELETED.");
     glitchPulse();
@@ -561,7 +532,7 @@ async function onSession(session, from = "UNKNOWN") {
   currentUser = session.user;
   uiSignedIn(currentUser);
 
-  await fetchLogs({ retry: 1 });
+  await fetchLogs();
   newEditor();
 }
 
@@ -569,7 +540,7 @@ async function onSession(session, from = "UNKNOWN") {
 btnLogin?.addEventListener("click", () => login());
 btnSignup?.addEventListener("click", () => signup());
 btnLogout?.addEventListener("click", () => logout());
-btnRefresh?.addEventListener("click", () => fetchLogs({ retry: 1 }));
+btnRefresh?.addEventListener("click", () => fetchLogs());
 btnNew?.addEventListener("click", () => {
   glitchPulse();
   const k = $("#kind")?.value || "Note";
@@ -595,26 +566,31 @@ showOfflineBanner(!navigator.onLine);
 })();
 
 /* auth state change (serialized) */
-sb().auth.onAuthStateChange((event, session) => {
+client.auth.onAuthStateChange((event, session) => {
   logAuth("STATE", { event, hasSession: !!session });
   withSessionLock(() => onSession(session, `AUTH:${event}`));
 });
 
 /**
  * iOS Safari 対策：
- * 画面復帰やスクロールで実質リロード/復帰した際に session が揺れることがあるので、
- * 可視状態になったら軽く session 確認 → 必要なら refresh
+ * 可視になったら session を読む。無い場合だけ refresh（ロック付き）を試す。
+ * → refresh連打を絶対にしない
  */
 document.addEventListener("visibilitychange", async () => {
   if (document.visibilityState !== "visible") return;
-  try {
-    const s = await refreshThenGetSession();
-    if (!s?.user) return; // 未ログインなら何もしない
+
+  await withSessionLock(async () => {
+    const s = await refreshIfNeeded();
+    if (!s?.user) return;
     currentUser = s.user;
-  } catch {}
+    // ここで fetchLogs を毎回叩くとスクロール復帰で連打になるので「必要時だけ」ボタン/初回に任せる
+  });
 });
 
-/* keep alive（念のため短めにするなら 3分でもOK） */
+/* keep alive：getSessionだけ。ログイン中のみ。頻度を下げる */
 setInterval(async () => {
-  try { await sb().auth.getSession(); } catch {}
-}, 5 * 60 * 1000);
+  try {
+    if (!currentUser) return;
+    await client.auth.getSession();
+  } catch {}
+}, 10 * 60 * 1000);
