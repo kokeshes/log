@@ -86,7 +86,7 @@
     "LAYER 11 // RESIDUAL SIGNAL",
     "make me sad",
     "make me mad",
-    "make me feel alright"
+    "make me feel alright?"
   ];
 
   function pickLine() {
