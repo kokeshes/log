@@ -1,299 +1,361 @@
-// log/app.js
-import { getSupabase, resetSupabase } from "./supabase.js";
+// app.js
+import { getSupabase } from "./supabase.js";
 
-/* ========= DOM ========= */
+const sb = () => getSupabase();
+
+/* =========================
+   DOM
+========================= */
 const $ = (s) => document.querySelector(s);
-const statusEl = $("#status");
-const loginView = $("#loginView");
-const appView = $("#appView");
-const emailEl = $("#email");
-const passEl = $("#password");
+
+const elEmail = $("#email");
+const elPass = $("#password");
 const btnLogin = $("#btnLogin");
 const btnLogout = $("#btnLogout");
-const btnNew = $("#btnNew");
-const btnSave = $("#btnSave");
-const btnRefresh = $("#btnRefresh");
+
+const statusEl = $("#status");
 const listEl = $("#logList");
-const editorEl = $("#editor");
+const editor = $("#editor");
+const authBox = $("#authBox");
+
+const kindSel = $("#kind");
 const titleEl = $("#title");
-const modeEl = $("#mode");
+const bodyEl = $("#body");
+const tagsEl = $("#tags");
+const moodEl = $("#mood");
+const btnSave = $("#btnSave");
+const btnNew = $("#btnNew");
 
-/* ========= state ========= */
+/* =========================
+   state
+========================= */
 let currentUser = null;
-let currentMode = "log";
-let currentId = null;
+let cache = [];
+let sessionLock = Promise.resolve(); // serialise session sensitive ops
 
-let _sessionLock = Promise.resolve();
-function withSessionLock(fn){
-  const next = _sessionLock.then(fn, fn);
-  _sessionLock = next.catch(()=>{});
-  return next;
-}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-function setStatus(msg){
-  if (statusEl) statusEl.textContent = msg || "";
-}
-function showLogin(){
-  loginView?.classList.remove("hidden");
-  appView?.classList.add("hidden");
-}
-function showApp(){
-  loginView?.classList.add("hidden");
-  appView?.classList.remove("hidden");
-}
-function glitchPulse(){
-  // 見た目演出（存在しなくてもOK）
-  document.documentElement.classList.add("pulse");
-  setTimeout(()=>document.documentElement.classList.remove("pulse"), 250);
+function setStatus(msg) {
+  if (!statusEl) return;
+  statusEl.textContent = msg;
 }
 
-function sb(){
-  return getSupabase();
+/* =========================
+   UI helpers
+========================= */
+function uiSignedIn(user) {
+  currentUser = user;
+  if (authBox) authBox.style.display = "none";
+  if (editor) editor.style.display = "block";
+  if (btnLogout) btnLogout.style.display = "inline-block";
 }
 
-/* ========= robust session helpers ========= */
-async function getSessionSafe(){
-  try{
-    const { data, error } = await sb().auth.getSession();
-    if (error) throw error;
-    return data?.session || null;
-  }catch(e){
-    console.warn("[AUTH] getSession failed", e);
+function uiSignedOut() {
+  currentUser = null;
+  cache = [];
+  if (listEl) listEl.innerHTML = "";
+  if (authBox) authBox.style.display = "block";
+  if (editor) editor.style.display = "none";
+  if (btnLogout) btnLogout.style.display = "none";
+}
+
+/* =========================
+   Session core
+   - iOS/PWAで getSession() が一瞬 null を返しても落とさない
+========================= */
+async function withSessionLock(fn) {
+  const prev = sessionLock;
+  let release;
+  sessionLock = new Promise(r => (release = r));
+  await prev;
+  try { return await fn(); }
+  finally { release(); }
+}
+
+// “生きてるsession”をできるだけ取りに行く
+async function getLiveSession() {
+  return withSessionLock(async () => {
+    // 1) まず素直にgetSession
+    let { data, error } = await sb().auth.getSession();
+    if (error) console.warn("[auth.getSession] ", error);
+
+    if (data?.session) return data.session;
+
+    // 2) 一瞬nullのケースがあるので refreshSession を試す（sessionが無ければ失敗するがOK）
+    try {
+      const r = await sb().auth.refreshSession();
+      if (r?.data?.session) return r.data.session;
+    } catch (e) {
+      // refreshできないのは「本当に未ログイン」か「ネット揺れ」なので次へ
+      console.warn("[auth.refreshSession] ", e);
+    }
+
+    // 3) もう一回 getSession
+    ({ data } = await sb().auth.getSession());
+    if (data?.session) return data.session;
+
+    return null;
+  });
+}
+
+async function ensureUserOrSoftFail() {
+  const session = await getLiveSession();
+
+  // sessionが取れない＝即ログアウト、にしない。
+  // onAuthStateChange が SIGNED_OUT を出した時だけ落とす。
+  if (!session?.user) {
+    setStatus("SESSION UNSTABLE… (waiting)");
     return null;
   }
+  return session.user;
 }
 
-async function refreshThenGetSession(){
-  try{
-    await sb().auth.refreshSession();
-  }catch(e){
-    console.warn("[AUTH] refreshSession failed", e);
-  }
-  return await getSessionSafe();
-}
+/* =========================
+   Auth wiring
+========================= */
+async function boot() {
+  setStatus("BOOT…");
 
-// 「一瞬のSIGNED_OUT」を弾き返すための保険：数回だけ再取得して確定させる
-async function confirmSignedOut(){
-  for (let i=0; i<3; i++){
-    const s = await refreshThenGetSession();
-    if (s?.user) return false; // まだ生きてる
-    await new Promise(r => setTimeout(r, 250 + i*250));
-  }
-  return true; // ほんとに死んでる
-}
-
-async function ensureSignedInOrThrow(){
-  const session = await refreshThenGetSession();
-  if (!session?.user) throw new Error("SESSION EXPIRED");
-  currentUser = session.user;
-  return session;
-}
-
-/* ========= UI ========= */
-function renderList(rows){
-  if (!listEl) return;
-  listEl.innerHTML = "";
-  if (!rows?.length){
-    const li = document.createElement("li");
-    li.className = "empty";
-    li.textContent = "No logs.";
-    listEl.appendChild(li);
-    return;
-  }
-  for (const r of rows){
-    const li = document.createElement("li");
-    li.className = "row";
-    li.dataset.id = r.id;
-    const t = (r.title || "").trim() || "(untitled)";
-    const dt = r.created_at ? new Date(r.created_at).toLocaleString() : "";
-    li.innerHTML = `<div class="t">${escapeHtml(t)}</div><div class="m">${escapeHtml(dt)}</div>`;
-    li.addEventListener("click", ()=>openLog(r.id));
-    listEl.appendChild(li);
-  }
-}
-
-function fillEditor(row){
-  currentId = row?.id ?? null;
-  if (titleEl) titleEl.value = row?.title ?? "";
-  if (editorEl) editorEl.value = row?.body ?? "";
-}
-
-function escapeHtml(s){
-  return String(s ?? "")
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#39;");
-}
-
-/* ========= data ========= */
-async function fetchLogs(){
-  setStatus("SYNC…");
-  const session = await ensureSignedInOrThrow();
-
-  // ここが「ログ0」になるとき、実は権限/セッション問題で select が通ってない可能性がある
-  const { data, error } = await sb()
-    .from("logs")
-    .select("id,title,created_at")
-    .order("created_at", { ascending: false })
-    .limit(200);
-
-  if (error){
-    console.warn("[DB] fetchLogs error", error);
-    setStatus("SYNC FAILED");
-    throw error;
-  }
-
-  renderList(data || []);
-  setStatus("OK");
-  return data || [];
-}
-
-async function openLog(id){
-  setStatus("OPEN…");
-  await ensureSignedInOrThrow();
-  const { data, error } = await sb()
-    .from("logs")
-    .select("id,title,body,created_at")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error){
-    console.warn("[DB] openLog error", error);
-    setStatus("OPEN FAILED");
-    throw error;
-  }
-
-  fillEditor(data || { id:null, title:"", body:"" });
-  setStatus("OK");
-}
-
-async function newLog(){
-  fillEditor({ id:null, title:"", body:"" });
-}
-
-async function saveLog(){
-  setStatus("SAVE…");
-  await ensureSignedInOrThrow();
-
-  const title = (titleEl?.value ?? "").trim();
-  const body  = (editorEl?.value ?? "");
-  const payload = { title, body };
-
-  let res;
-  if (currentId){
-    res = await sb().from("logs").update(payload).eq("id", currentId).select("id").maybeSingle();
-  }else{
-    res = await sb().from("logs").insert(payload).select("id").maybeSingle();
-  }
-
-  if (res.error){
-    console.warn("[DB] saveLog error", res.error);
-    setStatus("SAVE FAILED");
-    throw res.error;
-  }
-
-  currentId = res.data?.id ?? currentId;
-  glitchPulse();
-  await fetchLogs();
-  setStatus("SAVED");
-}
-
-/* ========= auth ========= */
-async function login(){
-  setStatus("LOGIN…");
-  const email = (emailEl?.value ?? "").trim();
-  const password = passEl?.value ?? "";
-
-  try{
-    const { error } = await sb().auth.signInWithPassword({ email, password });
-    if (error) throw error;
-
-    // ログイン直後も一回 refresh→getSession を通して固める
-    await ensureSignedInOrThrow();
-    showApp();
-    glitchPulse();
-    await fetchLogs();
-  }catch(e){
-    console.warn("[AUTH] login error", e);
-    setStatus("LOGIN FAILED");
-    alert("Login failed: " + (e?.message || String(e)));
-    showLogin();
-  }
-}
-
-async function logout(){
-  setStatus("LOGOUT…");
-  try{
-    await sb().auth.signOut();
-  }catch(e){
-    console.warn("[AUTH] signOut error", e);
-  }finally{
-    currentUser = null;
-    currentId = null;
-    showLogin();
-    setStatus("");
-  }
-}
-
-/* ========= boot ========= */
-async function boot(){
-  // actions
-  btnLogin?.addEventListener("click", ()=>withSessionLock(login));
-  btnLogout?.addEventListener("click", ()=>withSessionLock(logout));
-  btnNew?.addEventListener("click", ()=>withSessionLock(newLog));
-  btnSave?.addEventListener("click", ()=>withSessionLock(saveLog));
-  btnRefresh?.addEventListener("click", ()=>withSessionLock(fetchLogs));
-
-  // auth events（ここが今回のキモ）
-  sb().auth.onAuthStateChange(async (event, session)=>{
+  // authイベントが“真実”
+  sb().auth.onAuthStateChange((event, session) => {
     console.log("[AUTH]", event);
 
-    if (session?.user){
-      currentUser = session.user;
-      showApp();
-      return;
+    if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+      if (session?.user) {
+        uiSignedIn(session.user);
+        // ここで同期を走らせる（token refresh後も復旧しやすい）
+        fetchLogs({ retry: 2 });
+      }
     }
 
-    if (event === "SIGNED_OUT"){
-      // 「本当に」サインアウトか確認してから UI を落とす（iOS abort 対策）
-      const reallyOut = await confirmSignedOut();
-      if (reallyOut){
-        currentUser = null;
-        showLogin();
-        setStatus("");
-      }else{
-        // 復活した
-        showApp();
-        withSessionLock(fetchLogs);
-      }
-      return;
+    if (event === "SIGNED_OUT") {
+      setStatus("SIGNED OUT");
+      uiSignedOut();
     }
   });
 
-  // 初期セッション
-  const s = await refreshThenGetSession();
-  if (s?.user){
-    currentUser = s.user;
-    showApp();
-    await fetchLogs();
-  }else{
-    showLogin();
+  // 初回セッション復帰
+  const sess = await getLiveSession();
+  if (sess?.user) {
+    uiSignedIn(sess.user);
+    setStatus("SESSION OK");
+    fetchLogs({ retry: 2 });
+  } else {
+    setStatus("PLEASE LOGIN");
+    uiSignedOut();
   }
 
-  // iOS対策：復帰時に固める
-  document.addEventListener("visibilitychange", ()=>{
-    if (!document.hidden){
-      withSessionLock(async ()=>{
-        const s2 = await refreshThenGetSession();
-        if (s2?.user){
-          showApp();
-          await fetchLogs();
-        }
-      });
+  // 画面復帰でセッション再確認（iOSで重要）
+  document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState !== "visible") return;
+    const s = await getLiveSession();
+    if (s?.user) {
+      uiSignedIn(s.user);
+      // 画面復帰で同期
+      fetchLogs({ retry: 1 });
     }
   });
+
+  // 3分おき keepalive（iOSでtoken refreshが遅延/落ちた時の保険）
+  setInterval(async () => {
+    const s = await getLiveSession();
+    if (s?.user) {
+      // 何もしない（取得できた＝生きてる）
+    }
+  }, 180000);
 }
+
+/* =========================
+   Login/Logout
+========================= */
+async function doLogin() {
+  const email = (elEmail?.value || "").trim();
+  const password = (elPass?.value || "").trim();
+  if (!email || !password) { setStatus("ENTER EMAIL/PASS"); return; }
+
+  setStatus("LOGIN…");
+  try {
+    const { data, error } = await sb().auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    if (data?.user) uiSignedIn(data.user);
+    setStatus("LOGIN OK");
+    fetchLogs({ retry: 2 });
+  } catch (e) {
+    console.error(e);
+    setStatus("LOGIN ERR: " + (e?.message || "UNKNOWN"));
+  }
+}
+
+async function doLogout() {
+  setStatus("LOGOUT…");
+  try {
+    await sb().auth.signOut();
+  } catch (e) {
+    console.warn(e);
+  }
+}
+
+/* =========================
+   Logs
+========================= */
+function renderList(items) {
+  if (!listEl) return;
+  listEl.innerHTML = "";
+
+  for (const row of items) {
+    const div = document.createElement("div");
+    div.className = "log-item";
+
+    const dt = row.created_at ? new Date(row.created_at).toLocaleString() : "";
+    div.innerHTML = `
+      <div class="log-top">
+        <div class="log-kind">${escapeHtml(row.kind || "")}</div>
+        <div class="log-date">${escapeHtml(dt)}</div>
+      </div>
+      <div class="log-title">${escapeHtml(row.title || "")}</div>
+      <div class="log-body">${escapeHtml((row.body || "").slice(0, 160))}</div>
+    `;
+
+    div.addEventListener("click", () => loadToEditor(row));
+    listEl.appendChild(div);
+  }
+}
+
+function loadToEditor(row) {
+  if (!row) return;
+  editor.dataset.editingId = row.id || "";
+  if (kindSel) kindSel.value = row.kind || "Note";
+  if (titleEl) titleEl.value = row.title || "";
+  if (bodyEl) bodyEl.value = row.body || "";
+  if (tagsEl) tagsEl.value = Array.isArray(row.tags) ? row.tags.join(",") : "";
+  if (moodEl) moodEl.value = row.mood ?? "";
+  setStatus("EDITING");
+}
+
+function collectEditor() {
+  const kind = kindSel?.value || "Note";
+  const title = titleEl?.value ?? "";
+  const body = bodyEl?.value ?? "";
+  const tags = (tagsEl?.value || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+  const mood = moodEl?.value ? Number(moodEl.value) : null;
+
+  return { kind, title, body, tags, mood };
+}
+
+async function fetchLogs({ retry = 2 } = {}) {
+  // UI的にはログイン中に見えても、sessionが一瞬取れないことがあるので粘る
+  const user = await ensureUserOrSoftFail();
+  if (!user) {
+    // ここでuiSignedOutしない（勝手に落とすのが一番ダメ）
+    if (retry > 0) {
+      await sleep(400);
+      return fetchLogs({ retry: retry - 1 });
+    }
+    setStatus("SYNC PAUSED (NO SESSION)");
+    return;
+  }
+
+  setStatus("SYNC…");
+  try {
+    const { data, error, status } = await sb()
+      .from("logs")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(300);
+
+    if (error) {
+      console.error("[SYNC] status=", status, "error=", error);
+      // 401/403っぽい時は refresh → 1回だけ再試行
+      const msg = String(error?.message || "");
+      const code = String(error?.code || "");
+      if (retry > 0 && (status === 401 || status === 403 || code.includes("401") || msg.toLowerCase().includes("jwt"))) {
+        await sb().auth.refreshSession().catch(()=>{});
+        await sleep(250);
+        return fetchLogs({ retry: retry - 1 });
+      }
+      throw error;
+    }
+
+    cache = data || [];
+    renderList(cache);
+    setStatus(`SYNC OK // ${cache.length} logs`);
+  } catch (e) {
+    console.error(e);
+    if (retry > 0) {
+      setStatus("SYNC RETRY…");
+      await sleep(450);
+      return fetchLogs({ retry: retry - 1 });
+    }
+    setStatus("SYNC ERR: " + (e?.message || "UNKNOWN"));
+    try { window.WiredAudio?.errorSound?.(); } catch {}
+  }
+}
+
+async function saveLog() {
+  const user = await ensureUserOrSoftFail();
+  if (!user) { setStatus("NO SESSION (SAVE PAUSED)"); return; }
+
+  const payload = collectEditor();
+  const editingId = editor?.dataset?.editingId || "";
+
+  setStatus("SAVE…");
+  try {
+    if (!editingId) {
+      // insert
+      const { error } = await sb().from("logs").insert([{
+        user_id: user.id,
+        ...payload,
+      }]);
+      if (error) throw error;
+    } else {
+      // update
+      const { error } = await sb().from("logs").update({
+        ...payload,
+      }).eq("id", editingId).eq("user_id", user.id);
+      if (error) throw error;
+    }
+
+    setStatus("SAVE OK");
+    editor.dataset.editingId = "";
+    await fetchLogs({ retry: 2 });
+  } catch (e) {
+    console.error(e);
+    setStatus("SAVE ERR: " + (e?.message || "UNKNOWN"));
+    try { window.WiredAudio?.errorSound?.(); } catch {}
+  }
+}
+
+function newLog() {
+  if (editor) editor.dataset.editingId = "";
+  if (kindSel) kindSel.value = "Note";
+  if (titleEl) titleEl.value = "";
+  if (bodyEl) bodyEl.value = "";
+  if (tagsEl) tagsEl.value = "";
+  if (moodEl) moodEl.value = "";
+  setStatus("NEW");
+}
+
+/* =========================
+   Utils
+========================= */
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+/* =========================
+   events
+========================= */
+btnLogin?.addEventListener("click", doLogin);
+btnLogout?.addEventListener("click", doLogout);
+btnSave?.addEventListener("click", saveLog);
+btnNew?.addEventListener("click", newLog);
 
 boot();
