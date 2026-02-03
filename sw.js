@@ -1,6 +1,6 @@
 /* sw.js — MINIMUM SAFE PWA */
 
-const CACHE_NAME = "wired-min-v1";
+const CACHE_NAME = "wired-min-v2";
 
 const ASSETS = [
   "./",
