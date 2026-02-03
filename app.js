@@ -1,107 +1,133 @@
 // docs/app.js
 import { getSupabase } from "./supabase.js";
+
 const sb = getSupabase();
 
-/* helpers */
-const $ = (s)=>document.querySelector(s);
-const statusEl=$("#status");
-const setStatus=(t)=>{ if(statusEl) statusEl.textContent=t; };
+/* ========= helpers ========= */
+const $ = (s) => document.querySelector(s);
+const statusEl = $("#status");
 
-const emailEl=$("#email");
-const passEl=$("#password");
-const listEl=$("#list");
-const editorEl=$("#editor");
-const editorTpl=$("#editorTpl");
+function setStatus(msg){
+  if (statusEl) statusEl.textContent = msg;
+}
 
-let currentUser=null;
-let selected=null;
-let cache=[];
+function glitchPulse(){
+  const g = document.querySelector(".glitch-layer");
+  if (!g) return;
+  g.style.opacity = "1";
+  g.style.transform =
+    `translate(${(Math.random()*6-3).toFixed(1)}px, ${(Math.random()*6-3).toFixed(1)}px)`;
+  setTimeout(()=>{ g.style.opacity = "0"; }, 120);
+}
 
-/* ---- AUTH ---- */
+/* ========= BOOT (MOBILE SAFE) ========= */
+function bootSequenceSafe(){
+  try{ window.WiredAudio?.bootSound?.(); }catch{}
+  const boot = document.getElementById("boot");
+  if (boot) setTimeout(()=>boot.classList.add("hidden"), 800);
+}
+
+function waitUserGestureForBoot(){
+  const kick = () => {
+    document.removeEventListener("pointerdown", kick);
+    document.removeEventListener("touchstart", kick);
+    bootSequenceSafe();
+  };
+  document.addEventListener("pointerdown", kick, { once:true });
+  document.addEventListener("touchstart", kick, { once:true });
+}
+
+waitUserGestureForBoot();
+
+/* ========= DOM ========= */
+const authBox = $("#authBox");
+const navBox  = $("#navBox");
+const whoEmail = $("#whoEmail");
+
+const btnLogin   = $("#btnLogin");
+const btnSignup  = $("#btnSignup");
+const btnLogout  = $("#btnLogout");
+const btnRefresh = $("#btnRefresh");
+const btnNew     = $("#btnNew");
+
+const emailEl = $("#email");
+const passEl  = $("#password");
+
+const listEl   = $("#list");
+const editorEl = $("#editor");
+const editorTpl = $("#editorTpl");
+
+/* ========= state ========= */
+let currentUser = null;
+let selected = null;
+let cache = [];
+
+/* ========= UI ========= */
+function uiSignedOut(){
+  authBox?.classList.remove("hidden");
+  navBox?.classList.add("hidden");
+  btnLogout?.classList.add("hidden");
+  if (whoEmail) whoEmail.textContent = "-";
+}
+
+function uiSignedIn(user){
+  authBox?.classList.add("hidden");
+  navBox?.classList.remove("hidden");
+  btnLogout?.classList.remove("hidden");
+  if (whoEmail) whoEmail.textContent = user.email ?? "(unknown)";
+}
+
+/* ========= AUTH ========= */
 async function login(){
   setStatus("LOGIN…");
-  const {data,error}=await sb.auth.signInWithPassword({
-    email:emailEl.value.trim(),
-    password:passEl.value
-  });
-  if(error){ setStatus("ERR"); return; }
-  await onSession(data.session);
-}
+  try{
+    const { data, error } = await sb.auth.signInWithPassword({
+      email: (emailEl?.value ?? "").trim(),
+      password: passEl?.value ?? ""
+    });
+    if (error) throw error;
 
-async function onSession(session){
-  if(!session?.user){ setStatus("AUTH REQUIRED"); return; }
-  currentUser=session.user;
-  await fetchLogs();
-  newEditor();
-}
+    uiSignedIn(data.session.user);
+    currentUser = data.session.user;
 
-/* ---- LOGS ---- */
-async function fetchLogs(){
-  const {data,error}=await sb.from("logs")
-    .select("*")
-    .order("created_at",{ascending:false})
-    .limit(200);
-  if(error){ setStatus("SYNC ERR"); return; }
-  cache=data||[];
-  renderList(cache);
-  setStatus(`SYNC OK // ${cache.length}`);
-}
+    // ★ ログイン成功後に初めて Static / Noise を許可
+    setTimeout(()=>{
+      window.dispatchEvent(new Event("wired-user-ready"));
+    }, 300);
 
-function renderList(items){
-  listEl.innerHTML="";
-  if(!items.length){
-    listEl.innerHTML=`<div class="empty-msg">NO DATA</div>`;
-    return;
-  }
-  for(const it of items){
-    const d=document.createElement("div");
-    d.className="item";
-    d.textContent=it.title||"(no title)";
-    d.onclick=()=>openEditor(it);
-    listEl.appendChild(d);
+    setStatus("CONNECTED");
+    glitchPulse();
+  }catch(e){
+    console.error(e);
+    setStatus("ERR: LOGIN FAILED");
   }
 }
 
-/* ---- EDITOR ---- */
-function openEditor(it){
-  selected=it;
-  editorEl.innerHTML="";
-  editorEl.appendChild(editorTpl.content.cloneNode(true));
-
-  $("#body").value=it.body||"";
-
-  // ★ ここが重要：文字を static に送る
-  $("#body").addEventListener("input",(e)=>{
-    const v=e.target.value;
-    const ch=v.slice(-1);
-    if(ch){
-      window.dispatchEvent(
-        new CustomEvent("wired-text-fragment",{ detail:{ text: ch } })
-      );
-    }
-  });
-
-  $("#btnSave").onclick=saveCurrent;
+async function logout(){
+  await sb.auth.signOut();
+  uiSignedOut();
+  setStatus("DISCONNECTED");
 }
 
-function newEditor(){
-  openEditor({ id:null, body:"" });
-}
+/* ========= EVENTS ========= */
+btnLogin?.addEventListener("click", login);
+btnSignup?.addEventListener("click", login);
+btnLogout?.addEventListener("click", logout);
 
-async function saveCurrent(){
-  if(!currentUser) return;
-  const body=$("#body").value;
-  await sb.from("logs").insert({
-    body,
-    kind:"Note",
-    user_id:currentUser.id
-  });
-  await fetchLogs();
-  newEditor();
-}
+/* ========= INIT ========= */
+setStatus("BOOTING…");
 
-/* init */
-(async()=>{
-  const {data}=await sb.auth.getSession();
-  if(data?.session) await onSession(data.session);
+(async ()=>{
+  const { data } = await sb.auth.getSession();
+  if (data?.session?.user){
+    uiSignedIn(data.session.user);
+    currentUser = data.session.user;
+
+    setTimeout(()=>{
+      window.dispatchEvent(new Event("wired-user-ready"));
+    }, 300);
+  }else{
+    uiSignedOut();
+    setStatus("AUTH REQUIRED");
+  }
 })();
