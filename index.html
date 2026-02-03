@@ -203,12 +203,13 @@
   <script type="module" src="./crt.js"></script>
   <script type="module" src="./ps1.js"></script>
   <script src="./audio.js"></script>
+ <!---
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js");
     }
   </script>
-
+    -->
 <script>
   // Failsafe: even if module scripts fail to load, don't get stuck on boot screen forever.
   // (We still prefer the real bootSequence in app.js.)
