@@ -216,13 +216,13 @@
   </script>
     -->
 <script>
-  // Failsafe: even if module scripts fail to load, don't get stuck on boot screen forever.
+  // Failsafe: even if module scripts fail to load, don't get stuck
   // (We still prefer the real bootSequence in app.js.)
   setTimeout(() => {
     const boot = document.getElementById("boot");
     if (boot && boot.style.display !== "none") {
       boot.style.opacity = "0";
-      setTimeout(()=>{ boot.style.display="none"; }, 350);
+      setTimeout(() => { boot.style.display = "none"; }, 350);
       console.warn("[BOOT] fallback hide (module may have failed)");
     }
   }, 3500);
@@ -230,6 +230,14 @@
   window.addEventListener("error", (e) => {
     console.warn("[GLOBAL ERROR]", e?.message || e);
   });
+
+  // iOS / PWA audio unlock (MUST be inside body)
+  const unlock = async () => {
+    try { await window.WiredAudio?.start?.(); } catch {}
+  };
+  window.addEventListener("pointerdown", unlock, { once: true });
+  window.addEventListener("touchstart", unlock, { once: true, passive: true });
+  window.addEventListener("click", unlock, { once: true });
 </script>
 </body>
 </html>
