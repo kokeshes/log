@@ -208,5 +208,22 @@
       navigator.serviceWorker.register("./sw.js");
     }
   </script>
+
+<script>
+  // Failsafe: even if module scripts fail to load, don't get stuck on boot screen forever.
+  // (We still prefer the real bootSequence in app.js.)
+  setTimeout(() => {
+    const boot = document.getElementById("boot");
+    if (boot && boot.style.display !== "none") {
+      boot.style.opacity = "0";
+      setTimeout(()=>{ boot.style.display="none"; }, 350);
+      console.warn("[BOOT] fallback hide (module may have failed)");
+    }
+  }, 3500);
+
+  window.addEventListener("error", (e) => {
+    console.warn("[GLOBAL ERROR]", e?.message || e);
+  });
+</script>
 </body>
 </html>

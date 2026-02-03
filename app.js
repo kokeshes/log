@@ -1,346 +1,28 @@
-// app.js
-import { getSupabase } from "./supabase.js";
+// docs/app.js
+import { getSupabase, resetSupabase } from "./supabase.js";
 
-const sb = () => getSupabase();
-
-/* =========================
-   DOM
-========================= */
+/* ========= helpers ========= */
 const $ = (s) => document.querySelector(s);
-
-const elEmail = $("#email");
-const elPass = $("#password");
-const btnLogin = $("#btnLogin");
-const btnLogout = $("#btnLogout");
-
 const statusEl = $("#status");
-const listEl = $("#logList");
-const editor = $("#editor");
-const authBox = $("#authBox");
-
-const kindSel = $("#kind");
-const titleEl = $("#title");
-const bodyEl = $("#body");
-const tagsEl = $("#tags");
-const moodEl = $("#mood");
-const btnSave = $("#btnSave");
-const btnNew = $("#btnNew");
-
-/* =========================
-   state
-========================= */
-let currentUser = null;
-let cache = [];
-let sessionLock = Promise.resolve(); // serialise session sensitive ops
-
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function setStatus(msg) {
-  if (!statusEl) return;
-  statusEl.textContent = msg;
+  if (statusEl) statusEl.textContent = msg;
 }
 
-/* =========================
-   UI helpers
-========================= */
-function uiSignedIn(user) {
-  currentUser = user;
-  if (authBox) authBox.style.display = "none";
-  if (editor) editor.style.display = "block";
-  if (btnLogout) btnLogout.style.display = "inline-block";
+function showOfflineBanner(on) {
+  const el = document.getElementById("offline");
+  if (!el) return;
+  el.classList.toggle("hidden", !on);
 }
 
-function uiSignedOut() {
-  currentUser = null;
-  cache = [];
-  if (listEl) listEl.innerHTML = "";
-  if (authBox) authBox.style.display = "block";
-  if (editor) editor.style.display = "none";
-  if (btnLogout) btnLogout.style.display = "none";
+function glitchPulse() {
+  const g = document.querySelector(".glitch-layer");
+  if (!g) return;
+  g.style.opacity = "1";
+  g.style.transform = `translate(${(Math.random() * 6 - 3).toFixed(1)}px, ${(Math.random() * 6 - 3).toFixed(1)}px)`;
+  setTimeout(() => { g.style.opacity = "0"; }, 120);
 }
 
-/* =========================
-   Session core
-   - iOS/PWAで getSession() が一瞬 null を返しても落とさない
-========================= */
-async function withSessionLock(fn) {
-  const prev = sessionLock;
-  let release;
-  sessionLock = new Promise(r => (release = r));
-  await prev;
-  try { return await fn(); }
-  finally { release(); }
-}
-
-// “生きてるsession”をできるだけ取りに行く
-async function getLiveSession() {
-  return withSessionLock(async () => {
-    // 1) まず素直にgetSession
-    let { data, error } = await sb().auth.getSession();
-    if (error) console.warn("[auth.getSession] ", error);
-
-    if (data?.session) return data.session;
-
-    // 2) 一瞬nullのケースがあるので refreshSession を試す（sessionが無ければ失敗するがOK）
-    try {
-      const r = await sb().auth.refreshSession();
-      if (r?.data?.session) return r.data.session;
-    } catch (e) {
-      // refreshできないのは「本当に未ログイン」か「ネット揺れ」なので次へ
-      console.warn("[auth.refreshSession] ", e);
-    }
-
-    // 3) もう一回 getSession
-    ({ data } = await sb().auth.getSession());
-    if (data?.session) return data.session;
-
-    return null;
-  });
-}
-
-async function ensureUserOrSoftFail() {
-  const session = await getLiveSession();
-
-  // sessionが取れない＝即ログアウト、にしない。
-  // onAuthStateChange が SIGNED_OUT を出した時だけ落とす。
-  if (!session?.user) {
-    setStatus("SESSION UNSTABLE… (waiting)");
-    return null;
-  }
-  return session.user;
-}
-
-/* =========================
-   Auth wiring
-========================= */
-async function boot() {
-  setStatus("BOOT…");
-
-  // authイベントが“真実”
-  sb().auth.onAuthStateChange((event, session) => {
-    console.log("[AUTH]", event);
-
-    if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-      if (session?.user) {
-        uiSignedIn(session.user);
-        // ここで同期を走らせる（token refresh後も復旧しやすい）
-        fetchLogs({ retry: 2 });
-      }
-    }
-
-    if (event === "SIGNED_OUT") {
-      setStatus("SIGNED OUT");
-      uiSignedOut();
-    }
-  });
-
-  // 初回セッション復帰
-  const sess = await getLiveSession();
-  if (sess?.user) {
-    uiSignedIn(sess.user);
-    setStatus("SESSION OK");
-    fetchLogs({ retry: 2 });
-  } else {
-    setStatus("PLEASE LOGIN");
-    uiSignedOut();
-  }
-
-  // 画面復帰でセッション再確認（iOSで重要）
-  document.addEventListener("visibilitychange", async () => {
-    if (document.visibilityState !== "visible") return;
-    const s = await getLiveSession();
-    if (s?.user) {
-      uiSignedIn(s.user);
-      // 画面復帰で同期
-      fetchLogs({ retry: 1 });
-    }
-  });
-
-  // 3分おき keepalive（iOSでtoken refreshが遅延/落ちた時の保険）
-  setInterval(async () => {
-    const s = await getLiveSession();
-    if (s?.user) {
-      // 何もしない（取得できた＝生きてる）
-    }
-  }, 180000);
-}
-
-/* =========================
-   Login/Logout
-========================= */
-async function doLogin() {
-  const email = (elEmail?.value || "").trim();
-  const password = (elPass?.value || "").trim();
-  if (!email || !password) { setStatus("ENTER EMAIL/PASS"); return; }
-
-  setStatus("LOGIN…");
-  try {
-    const { data, error } = await sb().auth.signInWithPassword({ email, password });
-    if (error) throw error;
-    if (data?.user) uiSignedIn(data.user);
-    setStatus("LOGIN OK");
-    fetchLogs({ retry: 2 });
-  } catch (e) {
-    console.error(e);
-    setStatus("LOGIN ERR: " + (e?.message || "UNKNOWN"));
-  }
-}
-
-async function doLogout() {
-  setStatus("LOGOUT…");
-  try {
-    await sb().auth.signOut();
-  } catch (e) {
-    console.warn(e);
-  }
-}
-
-/* =========================
-   Logs
-========================= */
-function renderList(items) {
-  if (!listEl) return;
-  listEl.innerHTML = "";
-
-  for (const row of items) {
-    const div = document.createElement("div");
-    div.className = "log-item";
-
-    const dt = row.created_at ? new Date(row.created_at).toLocaleString() : "";
-    div.innerHTML = `
-      <div class="log-top">
-        <div class="log-kind">${escapeHtml(row.kind || "")}</div>
-        <div class="log-date">${escapeHtml(dt)}</div>
-      </div>
-      <div class="log-title">${escapeHtml(row.title || "")}</div>
-      <div class="log-body">${escapeHtml((row.body || "").slice(0, 160))}</div>
-    `;
-
-    div.addEventListener("click", () => loadToEditor(row));
-    listEl.appendChild(div);
-  }
-}
-
-function loadToEditor(row) {
-  if (!row) return;
-  editor.dataset.editingId = row.id || "";
-  if (kindSel) kindSel.value = row.kind || "Note";
-  if (titleEl) titleEl.value = row.title || "";
-  if (bodyEl) bodyEl.value = row.body || "";
-  if (tagsEl) tagsEl.value = Array.isArray(row.tags) ? row.tags.join(",") : "";
-  if (moodEl) moodEl.value = row.mood ?? "";
-  setStatus("EDITING");
-}
-
-function collectEditor() {
-  const kind = kindSel?.value || "Note";
-  const title = titleEl?.value ?? "";
-  const body = bodyEl?.value ?? "";
-  const tags = (tagsEl?.value || "")
-    .split(",")
-    .map(s => s.trim())
-    .filter(Boolean);
-  const mood = moodEl?.value ? Number(moodEl.value) : null;
-
-  return { kind, title, body, tags, mood };
-}
-
-async function fetchLogs({ retry = 2 } = {}) {
-  // UI的にはログイン中に見えても、sessionが一瞬取れないことがあるので粘る
-  const user = await ensureUserOrSoftFail();
-  if (!user) {
-    // ここでuiSignedOutしない（勝手に落とすのが一番ダメ）
-    if (retry > 0) {
-      await sleep(400);
-      return fetchLogs({ retry: retry - 1 });
-    }
-    setStatus("SYNC PAUSED (NO SESSION)");
-    return;
-  }
-
-  setStatus("SYNC…");
-  try {
-    const { data, error, status } = await sb()
-      .from("logs")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(300);
-
-    if (error) {
-      console.error("[SYNC] status=", status, "error=", error);
-      // 401/403っぽい時は refresh → 1回だけ再試行
-      const msg = String(error?.message || "");
-      const code = String(error?.code || "");
-      if (retry > 0 && (status === 401 || status === 403 || code.includes("401") || msg.toLowerCase().includes("jwt"))) {
-        await sb().auth.refreshSession().catch(()=>{});
-        await sleep(250);
-        return fetchLogs({ retry: retry - 1 });
-      }
-      throw error;
-    }
-
-    cache = data || [];
-    renderList(cache);
-    setStatus(`SYNC OK // ${cache.length} logs`);
-  } catch (e) {
-    console.error(e);
-    if (retry > 0) {
-      setStatus("SYNC RETRY…");
-      await sleep(450);
-      return fetchLogs({ retry: retry - 1 });
-    }
-    setStatus("SYNC ERR: " + (e?.message || "UNKNOWN"));
-    try { window.WiredAudio?.errorSound?.(); } catch {}
-  }
-}
-
-async function saveLog() {
-  const user = await ensureUserOrSoftFail();
-  if (!user) { setStatus("NO SESSION (SAVE PAUSED)"); return; }
-
-  const payload = collectEditor();
-  const editingId = editor?.dataset?.editingId || "";
-
-  setStatus("SAVE…");
-  try {
-    if (!editingId) {
-      // insert
-      const { error } = await sb().from("logs").insert([{
-        user_id: user.id,
-        ...payload,
-      }]);
-      if (error) throw error;
-    } else {
-      // update
-      const { error } = await sb().from("logs").update({
-        ...payload,
-      }).eq("id", editingId).eq("user_id", user.id);
-      if (error) throw error;
-    }
-
-    setStatus("SAVE OK");
-    editor.dataset.editingId = "";
-    await fetchLogs({ retry: 2 });
-  } catch (e) {
-    console.error(e);
-    setStatus("SAVE ERR: " + (e?.message || "UNKNOWN"));
-    try { window.WiredAudio?.errorSound?.(); } catch {}
-  }
-}
-
-function newLog() {
-  if (editor) editor.dataset.editingId = "";
-  if (kindSel) kindSel.value = "Note";
-  if (titleEl) titleEl.value = "";
-  if (bodyEl) bodyEl.value = "";
-  if (tagsEl) tagsEl.value = "";
-  if (moodEl) moodEl.value = "";
-  setStatus("NEW");
-}
-
-/* =========================
-   Utils
-========================= */
 function escapeHtml(s) {
   return String(s ?? "")
     .replaceAll("&", "&amp;")
@@ -350,12 +32,558 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
-/* =========================
-   events
-========================= */
-btnLogin?.addEventListener("click", doLogin);
-btnLogout?.addEventListener("click", doLogout);
-btnSave?.addEventListener("click", saveLog);
-btnNew?.addEventListener("click", newLog);
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-boot();
+function sb() { return getSupabase(); }
+
+/* ========= PROBE (diagnostic) ========= */
+function logAuth(label, obj) {
+  try {
+    console.log(`[AUTH ${label}]`, obj ?? "");
+  } catch {}
+}
+
+async function debugProbe(label) {
+  try {
+    const { data, error } = await sb().auth.getSession();
+    const has = !!data?.session;
+    console.log(`[PROBE ${label}] session=`, has, data?.session?.user?.email, error || "");
+    setStatus(`${label} // session=${has ? "YES" : "NO"}`);
+  } catch (e) {
+    console.log(`[PROBE ${label}] ERR`, e);
+    setStatus(`${label} // ERR ${e?.name || ""}`);
+  }
+}
+
+/* ========= BOOT ========= */
+(function bootSequence() {
+  try { window.WiredAudio?.bootSound?.(); } catch {}
+  const boot = document.getElementById("boot");
+  if (boot) setTimeout(() => boot.classList.add("hidden"), 1400);
+})();
+
+/* ========= DOM ========= */
+const authBox = $("#authBox");
+const navBox = $("#navBox");
+const whoEmail = $("#whoEmail");
+
+const btnLogin = $("#btnLogin");
+const btnSignup = $("#btnSignup");
+const btnLogout = $("#btnLogout");
+const btnRefresh = $("#btnRefresh");
+const btnNew = $("#btnNew");
+
+const emailEl = $("#email");
+const passEl = $("#password");
+
+const listEl = $("#list");
+const editorEl = $("#editor");
+const editorTpl = $("#editorTpl");
+
+const kindFilterEl = $("#kindFilter");
+const qEl = $("#q");
+
+/* ========= state ========= */
+let currentUser = null;
+let selected = null;
+let cache = [];
+
+/* ========= connectivity ========= */
+addEventListener("offline", () => {
+  showOfflineBanner(true);
+  setStatus("NO CARRIER // OFFLINE");
+});
+addEventListener("online", () => {
+  showOfflineBanner(false);
+  setStatus("ONLINE // WIRED RESTORED");
+});
+
+/* ========= UI ========= */
+function uiSignedOut() {
+  authBox?.classList.remove("hidden");
+  navBox?.classList.add("hidden");
+  btnLogout?.classList.add("hidden");
+
+  if (editorEl) {
+    editorEl.classList.add("locked");
+    editorEl.innerHTML = `<div class="locked-msg">AUTH REQUIRED // CONNECT TO WIRED</div>`;
+  }
+  if (listEl) {
+    listEl.innerHTML = `<div class="empty-msg">NO DATA // WAITING FOR NODE SYNC</div>`;
+  }
+  if (whoEmail) whoEmail.textContent = "-";
+
+  currentUser = null;
+  selected = null;
+  cache = [];
+}
+
+function uiSignedIn(user) {
+  authBox?.classList.add("hidden");
+  navBox?.classList.remove("hidden");
+  btnLogout?.classList.remove("hidden");
+  editorEl?.classList.remove("locked");
+  if (whoEmail) whoEmail.textContent = user.email ?? "(unknown)";
+}
+
+/* ========= Draft (autosave) ========= */
+const DRAFT_KEY = "wired_draft_v1";
+
+function draftId() {
+  const uid = currentUser?.id || "anon";
+  const sid = selected?.id ? String(selected.id) : "new";
+  return `${uid}::${sid}`;
+}
+
+function readDraftAll() {
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}"); }
+  catch { return {}; }
+}
+
+function writeDraftAll(obj) {
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(obj)); } catch {}
+}
+
+function saveDraftNow() {
+  const bodyEl = $("#body");
+  const titleEl = $("#title");
+  const kindEl = $("#kind");
+  const tagsEl = $("#tags");
+  const moodEl = $("#mood");
+  if (!bodyEl || !titleEl || !kindEl || !tagsEl || !moodEl) return;
+
+  const all = readDraftAll();
+  all[draftId()] = {
+    at: Date.now(),
+    kind: kindEl.value,
+    title: titleEl.value,
+    tags: tagsEl.value,
+    mood: moodEl.value,
+    body: bodyEl.value
+  };
+  writeDraftAll(all);
+}
+
+function clearDraft() {
+  const all = readDraftAll();
+  delete all[draftId()];
+  writeDraftAll(all);
+}
+
+function applyDraftIfAny() {
+  const all = readDraftAll();
+  const d = all[draftId()];
+  if (!d) return;
+
+  const bodyEl = $("#body");
+  if (!bodyEl) return;
+
+  const hasDraftText = String(d.body || "").length > 0;
+  if (!hasDraftText) return;
+
+  $("#kind").value = d.kind ?? $("#kind").value;
+  $("#title").value = d.title ?? $("#title").value;
+  $("#tags").value = d.tags ?? $("#tags").value;
+  $("#mood").value = d.mood ?? $("#mood").value;
+  $("#body").value = d.body ?? $("#body").value;
+
+  setStatus("DRAFT RESTORED // RECOVERED");
+  try { window.WiredAudio?.errorSound?.(); } catch {}
+}
+
+let draftTimer = 0;
+function hookDraftAutosave() {
+  const root = editorEl;
+  if (!root) return;
+  if (root.dataset.draftHooked === "1") return;
+  root.dataset.draftHooked = "1";
+
+  root.addEventListener("input", () => {
+    window.clearTimeout(draftTimer);
+    draftTimer = window.setTimeout(() => saveDraftNow(), 260);
+  }, { passive: true });
+}
+
+/* ========= AUTH / SESSION (critical) ========= */
+/**
+ * onSessionが多重に走るとUI・stateが競合し、結果「ログイン弾かれ」「ログ0」に見える挙動が起きる。
+ * → 直列化（ロック）
+ */
+let sessionLock = Promise.resolve();
+
+function withSessionLock(fn) {
+  sessionLock = sessionLock.then(fn).catch((e) => {
+    console.error("[SESSION LOCK] ERR", e);
+  });
+  return sessionLock;
+}
+
+async function getSessionSafe() {
+  const { data, error } = await sb().auth.getSession();
+  if (error) throw error;
+  return data?.session ?? null;
+}
+
+async function refreshThenGetSession() {
+  // NOTE:
+  // iOS(PWA) では短時間に refresh を連打すると不安定になりやすい。
+  // 基本はローカル session を読む → 必要そうなら 1回だけ refresh → 再取得。
+  const { data: s1, error: e1 } = await sb.auth.getSession();
+  if (e1) console.warn("[AUTH] getSession err", e1);
+  if (s1?.session) return s1.session;
+
+  const { data: r1, error: re1 } = await sb.auth.refreshSession();
+  if (re1) {
+    console.warn("[AUTH] refreshSession err", re1);
+    return null;
+  }
+  return r1?.session || null;
+}
+
+
+
+async function ensureSignedInOrThrow() {
+  const sess = await withSessionLock(() => refreshThenGetSession());
+  if (!sess?.user?.id) throw new Error("NOT_SIGNED_IN");
+  currentUser = sess.user;
+  return sess;
+}
+
+
+
+/* ========= auth actions ========= */
+async function login() {
+  setStatus("LOGIN…");
+  try {
+    const { data, error } = await sb().auth.signInWithPassword({
+      email: (emailEl?.value ?? "").trim(),
+      password: passEl?.value ?? ""
+    });
+    if (error) throw error;
+
+    await debugProbe("AFTER LOGIN");
+    glitchPulse();
+
+    await withSessionLock(() => onSession(data.session, "LOGIN"));
+  } catch (e) {
+    console.error(e);
+    setStatus("ERR: " + (e?.message ?? "LOGIN FAILED"));
+    try { window.WiredAudio?.errorSound?.(); } catch {}
+  }
+}
+
+async function signup() {
+  setStatus("SIGNUP…");
+  try {
+    const { error } = await sb().auth.signUp({
+      email: (emailEl?.value ?? "").trim(),
+      password: passEl?.value ?? ""
+    });
+    if (error) throw error;
+
+    setStatus("CHECK EMAIL // VERIFY");
+    glitchPulse();
+  } catch (e) {
+    console.error(e);
+    setStatus("ERR: " + (e?.message ?? "SIGNUP FAILED"));
+    try { window.WiredAudio?.errorSound?.(); } catch {}
+  }
+}
+
+async function logout() {
+  setStatus("LOGOUT…");
+  try { await sb().auth.signOut(); } catch {}
+  uiSignedOut();
+  setStatus("DISCONNECTED");
+  glitchPulse();
+}
+
+/* ========= list ========= */
+function filteredList() {
+  const kind = kindFilterEl?.value ?? "ALL";
+  const q = (qEl?.value ?? "").trim().toLowerCase();
+
+  return cache.filter(it => {
+    if (kind !== "ALL" && it.kind !== kind) return false;
+    if (!q) return true;
+    const blob = `${it.kind} ${it.title} ${it.body} ${(it.tags || []).join(" ")}`.toLowerCase();
+    return blob.includes(q);
+  });
+}
+
+function renderList(items) {
+  if (!listEl) return;
+
+  if (!items.length) {
+    listEl.innerHTML = `<div class="empty-msg">NO DATA // CREATE FIRST LOG</div>`;
+    return;
+  }
+
+  listEl.innerHTML = "";
+  for (const it of items) {
+    const div = document.createElement("div");
+    div.className = "item";
+
+    const preview = (it.body || "").replace(/\s+/g, " ").slice(0, 120);
+    const tags = (it.tags || [])
+      .slice(0, 4)
+      .map(t => `<span class="badge">#${escapeHtml(t)}</span>`)
+      .join("");
+
+    div.innerHTML = `
+      <div class="k">${escapeHtml(it.kind)}${it.mood == null ? "" : ` // mood ${it.mood}`}</div>
+      <div class="t">${escapeHtml(it.title || "(no title)")}</div>
+      <div class="m">${escapeHtml(preview)}</div>
+      <div class="d">
+        <span class="badge">${new Date(it.created_at).toLocaleString()}</span>
+        ${tags}
+      </div>
+    `;
+    div.addEventListener("click", () => openEditor(it));
+    listEl.appendChild(div);
+  }
+}
+
+/* ========= data ========= */
+async function fetchLogs({ retry = 1 } = {}) {
+  if (!currentUser) return;
+
+  setStatus("SYNC…");
+  const client = sb();
+
+  // 読み取りは「401/トークン期限」っぽい時だけ refresh → 1回リトライ
+  const runOnce = async () => {
+    const { data, error } = await client
+      .from("logs")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    if (error) throw error;
+    return data || [];
+  };
+
+  try{
+    const rows = await runOnce();
+    renderLogs(rows);
+    setStatus("OK");
+  }catch(err){
+    const msg = String(err?.message || "");
+    const code = err?.code || err?.status || err?.statusCode;
+
+    const looksAuth =
+      code === 401 || code === 403 ||
+      /jwt/i.test(msg) ||
+      /token/i.test(msg) ||
+      /not authorized/i.test(msg);
+
+    if (looksAuth && retry > 0){
+      console.warn("[SYNC] auth-ish error, trying refreshSession then retry", err);
+      await withSessionLock(async () => {
+        try{ await client.auth.refreshSession(); }catch(e){ console.warn("[AUTH] refresh failed", e); }
+      });
+      // getSession を取り直して currentUser を更新
+      try{ await ensureSignedInOrThrow(); }catch(_){ /* ignore */ }
+      return fetchLogs({ retry: retry - 1 });
+    }
+
+    console.warn("[SYNC] fetchLogs failed", err);
+    setStatus("OFFLINE?");
+    // ここで即サインアウト/強制リダイレクトはしない（iOSで誤判定が起きやすい）
+    showToast("SYNC 失敗: ネットワーク/認証を確認してください");
+  }
+}
+
+
+/* ========= editor ========= */
+function openEditor(it) {
+  selected = it;
+
+  if (!editorEl || !editorTpl) return;
+
+  editorEl.innerHTML = "";
+  editorEl.appendChild(editorTpl.content.cloneNode(true));
+  editorEl.dataset.draftHooked = "0";
+
+  $("#kind").value = it.kind ?? "Note";
+  $("#title").value = it.title ?? "";
+  $("#tags").value = (it.tags || []).join(", ");
+  $("#mood").value = (it.mood ?? "");
+  $("#body").value = it.body ?? "";
+
+  $("#btnSave").onclick = () => saveCurrent({ retry: 1 });
+  $("#btnDelete").onclick = deleteCurrent;
+
+  hookDraftAutosave();
+  applyDraftIfAny();
+
+  $("#body")?.focus();
+  glitchPulse();
+}
+
+function newEditor(kind = "Note") {
+  openEditor({
+    id: null,
+    kind,
+    title: "",
+    body: "",
+    tags: [],
+    mood: null,
+    created_at: new Date().toISOString()
+  });
+}
+
+/* ========= SAVE / DELETE ========= */
+async function saveCurrent({ retry = 1 } = {}) {
+  try {
+    setStatus("SAVE…");
+    await debugProbe("BEFORE SAVE");
+
+    await ensureSignedInOrThrow();
+
+    if (!selected) throw new Error("EDITOR STATE LOST");
+
+    const payload = {
+      kind: $("#kind")?.value ?? "Note",
+      title: ($("#title")?.value ?? "").trim(),
+      body: ($("#body")?.value ?? ""),
+      tags: ($("#tags")?.value ?? "").split(",").map(s => s.trim()).filter(Boolean),
+      mood: ($("#mood")?.value ?? "") === "" ? null : Number($("#mood")?.value),
+      user_id: currentUser.id
+    };
+
+    if (!selected.id) {
+      const { error } = await sb().from("logs").insert(payload);
+      if (error) throw error;
+    } else {
+      const { error } = await sb().from("logs").update(payload).eq("id", selected.id);
+      if (error) throw error;
+    }
+
+    clearDraft();
+    try { window.WiredAudio?.saveSound?.(); } catch {}
+
+    await fetchLogs({ retry: 1 });
+    newEditor(payload.kind);
+
+    setStatus("READY // NEXT LOG");
+    glitchPulse();
+
+  } catch (e) {
+    console.error(e);
+
+    if (String(e?.message || "").includes("SESSION EXPIRED")) {
+      setStatus("SESSION LOST // RELOGIN");
+      try { window.WiredAudio?.errorSound?.(); } catch {}
+      alert("セッションが切れています。再ログインしてください。\n（本文は下書きとして保持されています）");
+      uiSignedOut();
+      return;
+    }
+
+    if (retry > 0) {
+      setStatus("SAVE RETRY…");
+      resetSupabase();
+      await sleep(350);
+      return saveCurrent({ retry: retry - 1 });
+    }
+
+    setStatus("ERR: SAVE FAILED");
+    try { window.WiredAudio?.errorSound?.(); } catch {}
+    alert("SAVE FAILED\n（本文は下書きとして保持されています）\n\n" + (e?.message ?? e));
+  }
+}
+
+async function deleteCurrent() {
+  if (!selected?.id) return;
+  if (!confirm("DELETE LOG?")) return;
+
+  setStatus("DELETE…");
+
+  try {
+    await ensureSignedInOrThrow();
+
+    const { error } = await sb().from("logs").delete().eq("id", selected.id);
+    if (error) throw error;
+
+    clearDraft();
+    await fetchLogs({ retry: 1 });
+    newEditor();
+    setStatus("DELETED.");
+    glitchPulse();
+
+  } catch (e) {
+    console.error(e);
+    setStatus("ERR: " + (e?.message ?? "DELETE FAILED"));
+    try { window.WiredAudio?.errorSound?.(); } catch {}
+  }
+}
+
+/* ========= session ========= */
+async function onSession(session, from = "UNKNOWN") {
+  if (!session?.user) {
+    logAuth("NO SESSION", from);
+    uiSignedOut();
+    setStatus("AUTH REQUIRED // CONNECT TO WIRED");
+    return;
+  }
+
+  currentUser = session.user;
+  uiSignedIn(currentUser);
+
+  await fetchLogs({ retry: 1 });
+  newEditor();
+}
+
+/* ========= events ========= */
+btnLogin?.addEventListener("click", () => login());
+btnSignup?.addEventListener("click", () => signup());
+btnLogout?.addEventListener("click", () => logout());
+btnRefresh?.addEventListener("click", () => fetchLogs({ retry: 1 }));
+btnNew?.addEventListener("click", () => {
+  glitchPulse();
+  const k = $("#kind")?.value || "Note";
+  newEditor(k);
+});
+
+kindFilterEl?.addEventListener("change", () => renderList(filteredList()));
+qEl?.addEventListener("input", () => renderList(filteredList()));
+
+/* ========= init ========= */
+setStatus("BOOT…");
+showOfflineBanner(!navigator.onLine);
+
+(async function init() {
+  try {
+    const session = await getSessionSafe();
+    await withSessionLock(() => onSession(session, "INIT"));
+  } catch (e) {
+    console.error(e);
+    uiSignedOut();
+    setStatus("AUTH REQUIRED // CONNECT TO WIRED");
+  }
+})();
+
+/* auth state change (serialized) */
+sb().auth.onAuthStateChange((event, session) => {
+  logAuth("STATE", { event, hasSession: !!session });
+  withSessionLock(() => onSession(session, `AUTH:${event}`));
+});
+
+/**
+ * iOS Safari 対策：
+ * 画面復帰やスクロールで実質リロード/復帰した際に session が揺れることがあるので、
+ * 可視状態になったら軽く session 確認 → 必要なら refresh
+ */
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState !== "visible") return;
+  try {
+    const s = await refreshThenGetSession();
+    if (!s?.user) return; // 未ログインなら何もしない
+    currentUser = s.user;
+  } catch {}
+});
+
+/* keep alive（念のため短めにするなら 3分でもOK） */
+setInterval(async () => {
+  try { await sb().auth.getSession(); } catch {}
+}, 5 * 60 * 1000);
